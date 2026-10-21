@@ -50,7 +50,10 @@ describe('推送入口', () => {
     await openWorkspace();
     const button = host.querySelector<HTMLButtonElement>('[aria-label="推送当前分支"]')!;
     expect(button.disabled).toBe(false);
-    expect(button.textContent).toContain('推送');
+    expect(button.textContent).toBe('');
+    expect(button.querySelector('svg')).not.toBeNull();
+    expect(button.parentElement?.classList.contains('commit-actions')).toBe(true);
+    expect(host.querySelector('.workspace-section-heading [aria-label="推送当前分支"]')).toBeNull();
     await click('推送当前分支');
     expect(git.push).toHaveBeenCalledWith(workspace.path);
   });
@@ -59,10 +62,9 @@ describe('推送入口', () => {
     vi.mocked(git.open).mockResolvedValueOnce({ ...snapshot, hasUpstream: true, ahead: 2 });
     await openWorkspace();
     const button = host.querySelector<HTMLButtonElement>('[aria-label="推送当前分支"]')!;
-    expect(button.textContent).toContain('2');
+    expect(button.title).toContain('2 个待推送提交');
     expect(button.disabled).toBe(false);
-    const actions = host.querySelector('.workspace-section-heading > div:last-child')!;
-    expect(Array.from(actions.querySelectorAll('button')).slice(-2).map(item => item.textContent)).toEqual(['获取更新', '推送2']);
+    expect(button.previousElementSibling?.textContent).toContain('提交更改');
     await click('推送当前分支');
     expect(await vi.mocked(git.push).mock.results[0].value).toEqual(expect.objectContaining({ ahead: 0, hasUpstream: true }));
   });

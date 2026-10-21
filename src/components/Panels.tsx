@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { IconArrowDown, IconArrowRight, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconCopy, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconStack2, IconTextWrap, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconCopy, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconStack2, IconTextWrap, IconTrash, IconX } from '@tabler/icons-react';
 import type { GitCommit, GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
 import { git } from '../services/git';
 import './panels.css';
 
-export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onCommit, busy }: {
+export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onCommit, canPush, pushTitle, onPush, busy }: {
   message: string; onMessageChange: (message: string) => void;
   snapshot: RepositorySnapshot; selected: string | null; onSelect: (path: string, staged: boolean) => void;
-  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onCommit: (message: string) => Promise<boolean>; busy: boolean;
+  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onCommit: (message: string) => Promise<boolean>; canPush: boolean; pushTitle: string; onPush: () => void; busy: boolean;
 }) {
   const [filter, setFilter] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState({ pending: false, staged: false });
@@ -42,7 +42,7 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
     <div className="commit-form">
       <label htmlFor="commit-message">提交信息</label>
       <textarea id="commit-message" aria-label="提交信息" placeholder="描述本次更改…" value={message} onChange={e => onMessageChange(e.target.value)} onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void submit(); } }} />
-      <button className="primary-button commit-button" disabled={!staged.length || !message.trim() || busy} onClick={() => { void submit(); }}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}提交更改 <span>{staged.length}</span><kbd>Ctrl ↵</kbd></button>
+      <div className="commit-actions"><button className="primary-button commit-button" disabled={!staged.length || !message.trim() || busy} onClick={() => { void submit(); }}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}提交更改 <span>{staged.length}</span><kbd>Ctrl ↵</kbd></button><button className="icon-button push-commit-button" aria-label="推送当前分支" title={pushTitle} disabled={busy || !canPush} onClick={onPush}><IconArrowUp size={16} /></button></div>
     </div>
   </div>;
 }

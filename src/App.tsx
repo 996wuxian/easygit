@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconArrowDown, IconArrowUp, IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconGitCommit, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconGitCommit, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, ActivityPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
@@ -10,6 +11,9 @@ import { isDesktop, type GitCommit } from './services/git';
 import { useRepository, type RecentRepository } from './services/useRepository';
 
 type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'branches' | null;
+type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
+const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
+function readSidebarOrder(): string[] { try { const value: unknown = JSON.parse(localStorage.getItem(SIDEBAR_ORDER_KEY) ?? '[]'); return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []; } catch { return []; } }
 function readTheme(): 'light' | 'dark' { try { return localStorage.getItem('esaygit.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }
 
 export default function App({ onReady }: { onReady: () => void }) {
@@ -26,16 +30,154 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
   const [activeNav, setActiveNav] = useState('workspace');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
+  const [repositoryTooltip, setRepositoryTooltip] = useState<{ name: string; path: string; left: number; top: number } | null>(null);
+  const [sidebarOrder, setSidebarOrder] = useState(readSidebarOrder);
+  const [draggingRepository, setDraggingRepository] = useState<string | null>(null);
+  const [dropTargetRepository, setDropTargetRepository] = useState<string | null>(null);
+  const repositoryPress = useRef<RepositoryPress | null>(null);
+  const suppressRepositoryClick = useRef(false);
+  const repositoryListRef = useRef<HTMLDivElement>(null);
+  const [repositoryScroll, setRepositoryScroll] = useState({ canUp: false, canDown: false });
   const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all' } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
-  const workspaces = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
-    ? [{ name: snapshot.name, path: snapshot.path }, ...repo.recents] : repo.recents;
+  const workspaces = useMemo(() => {
+    const available = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
+      ? [{ name: snapshot.name, path: snapshot.path }, ...repo.recents] : repo.recents;
+    const byPath = new Map(available.map(item => [item.path, item]));
+    return [...sidebarOrder.map(path => byPath.get(path)).filter((item): item is RecentRepository => Boolean(item)), ...available.filter(item => !sidebarOrder.includes(item.path))];
+  }, [hasRepository, repo.recents, snapshot.name, snapshot.path, sidebarOrder]);
+
+  const moveWorkspace = useCallback((fromPath: string, toPath: string) => {
+    if (fromPath === toPath) return;
+    setSidebarOrder(current => {
+      const availablePaths = workspaces.map(item => item.path);
+      const order = [...current.filter(path => availablePaths.includes(path)), ...availablePaths.filter(path => !current.includes(path))];
+      const fromIndex = order.indexOf(fromPath);
+      const toIndex = order.indexOf(toPath);
+      if (fromIndex < 0 || toIndex < 0) return current;
+      const [moved] = order.splice(fromIndex, 1);
+      order.splice(toIndex, 0, moved);
+      try { localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(order)); } catch { /* optional preference */ }
+      return order;
+    });
+  }, [workspaces]);
+
+  const updateRepositoryScroll = useCallback(() => {
+    const list = repositoryListRef.current;
+    if (!list) return;
+    const next = { canUp: list.scrollTop > 1, canDown: list.scrollTop + list.clientHeight < list.scrollHeight - 1 };
+    setRepositoryScroll(current => current.canUp === next.canUp && current.canDown === next.canDown ? current : next);
+  }, []);
+
+  function scrollRepositories(direction: -1 | 1) {
+    repositoryListRef.current?.scrollBy({ top: direction * 120, behavior: 'smooth' });
+  }
+
+  function startRepositoryPress(workspace: RecentRepository, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    if (repositoryPress.current) window.clearTimeout(repositoryPress.current.timer);
+    const element = event.currentTarget;
+    const press: RepositoryPress = {
+      path: workspace.path,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: 0,
+      started: false,
+      targetPath: workspace.path,
+      element,
+    };
+    repositoryPress.current = press;
+    press.timer = window.setTimeout(() => {
+      if (repositoryPress.current !== press) return;
+      press.started = true;
+      setDraggingRepository(press.path);
+      setDropTargetRepository(press.path);
+      try { press.element.setPointerCapture(press.pointerId); } catch { /* pointer may have been cancelled */ }
+    }, 360);
+  }
+
+  useEffect(() => {
+    if (!workspaces.length) return;
+    setSidebarOrder(current => {
+      const paths = workspaces.map(item => item.path);
+      const next = [...current.filter(path => paths.includes(path)), ...paths.filter(path => !current.includes(path))];
+      if (next.length === current.length && next.every((path, index) => path === current[index])) return current;
+      try { localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(next)); } catch { /* optional preference */ }
+      return next;
+    });
+  }, [workspaces]);
+
+  useEffect(() => {
+    updateRepositoryScroll();
+    const list = repositoryListRef.current;
+    if (list && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateRepositoryScroll);
+      observer.observe(list);
+      if (list.firstElementChild) observer.observe(list.firstElementChild);
+      return () => observer.disconnect();
+    }
+    window.addEventListener('resize', updateRepositoryScroll);
+    return () => window.removeEventListener('resize', updateRepositoryScroll);
+  }, [updateRepositoryScroll, workspaces.length]);
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const press = repositoryPress.current;
+      if (!press || event.pointerId !== press.pointerId) return;
+      if (!press.started) {
+        if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 8) {
+          window.clearTimeout(press.timer);
+          repositoryPress.current = null;
+        }
+        return;
+      }
+      const entry = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-repository-path]');
+      press.targetPath = entry?.dataset.repositoryPath ?? null;
+      setDropTargetRepository(press.targetPath);
+      event.preventDefault();
+    };
+    const finish = (event: PointerEvent, cancelled = false) => {
+      const press = repositoryPress.current;
+      if (!press || event.pointerId !== press.pointerId) return;
+      window.clearTimeout(press.timer);
+      repositoryPress.current = null;
+      if (press.started && !cancelled) {
+        suppressRepositoryClick.current = true;
+        if (press.targetPath) moveWorkspace(press.path, press.targetPath);
+        window.setTimeout(() => { suppressRepositoryClick.current = false; }, 0);
+      }
+      setDraggingRepository(null);
+      setDropTargetRepository(null);
+    };
+    const up = (event: PointerEvent) => finish(event);
+    const cancel = (event: PointerEvent) => finish(event, true);
+    document.addEventListener('pointermove', move, { passive: false });
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', cancel);
+    return () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', cancel);
+      if (repositoryPress.current) window.clearTimeout(repositoryPress.current.timer);
+    };
+  }, [moveWorkspace]);
 
   function requestRemoval(workspace: RecentRepository) {
     if (busy) return;
     setRemoval({ workspace, returnToOpen: modal === 'open' });
     setSelectedCommit(null);
     closeModal();
+  }
+
+  function showRepositoryTooltip(workspace: RecentRepository, target: HTMLButtonElement) {
+    const rect = target.getBoundingClientRect();
+    setRepositoryTooltip({
+      name: workspace.name,
+      path: workspace.path,
+      left: Math.min(rect.right + 10, Math.max(8, window.innerWidth - 280)),
+      top: rect.top + rect.height / 2,
+    });
   }
   function cancelRemoval() {
     if (removal?.returnToOpen) setModal('open');
@@ -124,10 +266,10 @@ export default function App({ onReady }: { onReady: () => void }) {
   const stagedCount = snapshot.files.filter(f => f.staged).length;
   const changedCount = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged).length;
   const canPush = Boolean(snapshot.remote && snapshot.head && !snapshot.branch.startsWith('detached@') && (!snapshot.hasUpstream || snapshot.ahead > 0));
-  const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : '推送当前分支';
+  const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : snapshot.hasUpstream ? `推送当前分支（${snapshot.ahead} 个待推送提交）` : '首次推送并设置上游分支';
   const renderPanel = (id: PanelId) => {
     switch (id) {
-      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
+      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} notify={notify} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
       case 'commits': return <CommitsPanel snapshot={snapshot} onSelect={setSelectedCommit} />;
@@ -160,16 +302,23 @@ export default function App({ onReady }: { onReady: () => void }) {
         <button title="操作记录" aria-label="操作记录" aria-current={activeNav === 'activity' ? 'page' : undefined} className={activeNav === 'activity' ? 'active' : ''} onClick={() => focusPanel('activity')}><IconTerminal2 size={20} /></button>
       </nav>
       <span className="rail-divider" />
-      <div className="repository-list">
-        {workspaces.map(item => <div className="repository-entry" key={item.path}>
-          <button className={`repository-item ${snapshot.path === item.path ? 'selected' : ''}`} aria-label={`打开仓库 ${item.name}`} title={`${item.name}\n${item.path}`} disabled={busy} onClick={() => { void openPath(item.path); }}>{item.name.slice(0, 1).toUpperCase()}{snapshot.path === item.path && <span />}</button>
-          <button className="repository-remove" aria-label={`移除工作区 ${item.name}`} title="从 easygit 移除工作区" disabled={busy} onClick={() => requestRemoval(item)}><IconX size={11} /></button>
-        </div>)}
+      <div className="repository-navigation" aria-label="仓库列表">
+        <button className="repository-scroll-button" title="向上滚动仓库列表" aria-label="向上滚动仓库列表" disabled={!repositoryScroll.canUp} onClick={() => scrollRepositories(-1)}><IconChevronUp size={16} /></button>
+        <div className="repository-list-scroll" ref={repositoryListRef} onScroll={updateRepositoryScroll}>
+          <div className="repository-list">
+            {workspaces.map(item => <div className={`repository-entry ${draggingRepository === item.path ? 'dragging' : ''} ${dropTargetRepository === item.path && draggingRepository !== item.path ? 'drag-over' : ''}`} data-repository-path={item.path} key={item.path}>
+              <button className={`repository-item ${snapshot.path === item.path ? 'selected' : ''}`} aria-label={`打开仓库 ${item.name}`} aria-describedby={repositoryTooltip?.path === item.path ? 'repository-tooltip' : undefined} disabled={busy} onPointerDown={event => startRepositoryPress(item, event)} onContextMenu={event => event.preventDefault()} onMouseEnter={event => showRepositoryTooltip(item, event.currentTarget)} onMouseLeave={() => setRepositoryTooltip(null)} onFocus={event => showRepositoryTooltip(item, event.currentTarget)} onBlur={() => setRepositoryTooltip(null)} onClick={event => { if (suppressRepositoryClick.current) { event.preventDefault(); suppressRepositoryClick.current = false; return; } void openPath(item.path); }}>{item.name.slice(0, 1).toUpperCase()}</button>
+              <button className="repository-remove" aria-label={`移除工作区 ${item.name}`} title="从 easygit 移除工作区" disabled={busy} onClick={() => requestRemoval(item)}><IconX size={11} /></button>
+            </div>)}
+          </div>
+        </div>
+        <button className="repository-scroll-button" title="向下滚动仓库列表" aria-label="向下滚动仓库列表" disabled={!repositoryScroll.canDown} onClick={() => scrollRepositories(1)}><IconChevronDown size={16} /></button>
         <button className="rail-button add-repository" title="打开本地仓库 · Ctrl O" aria-label="打开本地仓库" onClick={() => setModal('open')}><IconPlus size={19} /></button>
       </div>
-      <div className="sidebar-spacer" />
       <div className="sidebar-bottom"><button className="rail-button" title="自定义布局" aria-label="自定义布局" onClick={() => setModal('layout')}><IconLayoutGrid size={20} /></button><button className="rail-button" title={theme === 'light' ? '切换深色主题' : '切换浅色主题'} aria-label={theme === 'light' ? '切换深色主题' : '切换浅色主题'} onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <IconMoon size={20} /> : <IconSun size={20} />}</button><button className="rail-button" title="偏好设置" aria-label="偏好设置" onClick={() => setModal('settings')}><IconSettings size={20} /></button></div>
     </aside>
+
+    {repositoryTooltip && createPortal(<div id="repository-tooltip" className="repository-tooltip" role="tooltip" style={{ left: repositoryTooltip.left, top: repositoryTooltip.top }}><strong>{repositoryTooltip.name}</strong><small>{repositoryTooltip.path}</small></div>, document.body)}
 
     <main className="main-scroll">
       <div className="workspace-topbar"><button className="repository-switcher" title="切换仓库" aria-label="切换仓库" onClick={() => setModal('open')}><IconFolder size={19} /><strong>{snapshot.name || '选择仓库'}</strong><IconChevronDown size={13} /></button><div className="topbar-tools"><button className="topbar-search" onClick={() => setModal('commands')}><IconSearch size={16} /><span>搜索命令或操作</span><kbd>Ctrl K</kbd></button><button className="primary-button open-repo-button" onClick={() => setModal('open')}><IconPlus size={16} />打开仓库</button></div></div>
@@ -177,15 +326,15 @@ export default function App({ onReady }: { onReady: () => void }) {
         <section className="page-heading"><h1>工作区</h1><div className="heading-actions"><span className={`workspace-status ${snapshot.files.length ? 'has-changes' : ''}`}><span className="tiny-dot" />{snapshot.operation ? snapshot.operation : snapshot.files.length ? '有未提交更改' : '工作区干净'}</span><button className="icon-button" aria-label="刷新仓库" title="刷新仓库 · Ctrl R" disabled={busy} onClick={() => { void repo.refresh(); }}><IconRefresh size={17} className={busy ? 'spin' : ''} /></button></div></section>
 
         <section className="repository-overview" aria-label="当前仓库">
-          <button className="branch-card" onClick={() => setModal('branches')} title="切换分支"><span className="branch-card-top"><span><IconGitBranch size={15} />当前分支</span><IconChevronDown size={15} /></span><strong>{snapshot.branch || '尚无分支'}</strong><span className="branch-card-bottom"><span title={snapshot.path}>{snapshot.path}</span><span className="branch-card-local">LOCAL</span></span></button>
-          <div className="metric-card"><span className="metric-label">未暂存<IconFolder size={16} /></span><strong>{changedCount}</strong><span className="metric-detail">工作区文件</span></div>
-          <div className="metric-card"><span className="metric-label">已暂存<IconCheck size={16} /></span><strong>{stagedCount}</strong><span className="metric-detail"><span className="metric-dot" />等待提交</span></div>
-          <div className="metric-card"><span className="metric-label">待推送<IconArrowUp size={16} /></span><strong>{snapshot.ahead}</strong><span className="metric-detail">{snapshot.remote ? `${snapshot.remote} · 落后 ${snapshot.behind} 次提交` : '未设置远程'}</span></div>
+          <button className="branch-card" onClick={() => setModal('branches')} title="切换分支"><span className="branch-card-top"><span><IconGitBranch size={15} />当前分支</span></span><strong>{snapshot.branch || '尚无分支'}</strong><IconChevronDown className="branch-card-chevron" size={15} /></button>
+          <div className="metric-card"><span className="metric-label">未暂存</span><strong>{changedCount}</strong></div>
+          <div className="metric-card"><span className="metric-label">已暂存</span><strong>{stagedCount}</strong></div>
+          <div className="metric-card"><span className="metric-label">待推送</span><strong>{snapshot.ahead}</strong></div>
         </section>
 
         {snapshot.operation && <div className="operation-banner"><IconGitBranch size={16} />当前正在进行 {snapshot.operation}，请处理完成后继续提交。</div>}
 
-        <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button><span className="toolbar-divider" /><button className="text-button" disabled={busy || !snapshot.remote} title={snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}><IconArrowDown size={14} />获取更新</button><button className="text-button" aria-label="推送当前分支" title={pushTitle} disabled={busy || !canPush} onClick={() => { void repo.push(); }}><IconArrowUp size={14} />推送{snapshot.ahead > 0 && <span className="push-count">{snapshot.ahead}</span>}</button></div></div>
+        <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button><span className="toolbar-divider" /><button className="text-button" disabled={busy || !snapshot.remote} title={snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}><IconArrowDown size={14} />获取更新</button></div></div>
 
         <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">最近 {Math.min(snapshot.commits.length, 5)} 次</span>}<button className="panel-hide-button" aria-label={`隐藏${PANEL_TITLES[id]}`} title="隐藏面板" disabled={panels.visiblePanels.length === 1} onClick={() => panels.togglePanel(id)}><IconX size={13} /></button></>} />
 
