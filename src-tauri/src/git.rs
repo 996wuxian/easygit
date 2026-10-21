@@ -9,7 +9,9 @@ mod conflicts_tests;
 pub use commit_actions::{act_on_commit, CommitAction};
 pub use conflicts::{read_conflict, resolve_conflict, ConflictFile, ConflictResolution};
 mod history;
+mod merge;
 pub use comparison::{read_file_comparison, FileComparison};
+pub use merge::{commit_files, merge_branches, preview_merge, MergePreview, MergeResult};
 use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},

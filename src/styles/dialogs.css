@@ -110,6 +110,35 @@
 .commit-detail p { color: var(--text-muted); font-size: 11px; margin-bottom: 25px; }
 .commit-hash { display: flex; align-items: center; gap: 8px; padding: 9px; background: var(--bg-soft); border-radius: 6px; border: 1px solid var(--border); }
 .commit-hash code { flex: 1; min-width: 0; font-size: 11px; word-break: break-all; }
+.commit-files-label { margin-top: 19px; }
+.commit-files-list { display: grid; gap: 5px; max-height: 190px; overflow: auto; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-soft); }
+.commit-files-list > code { color: var(--text-muted); font: 10px/1.6 var(--mono); overflow-wrap: anywhere; }
+.commit-files-list > span, .commit-files-state { display: flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: 11px; }
+.commit-files-state.error { color: var(--danger); }
+.branch-merge-dialog { width: 590px; }
+.merge-branch-route { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); }
+.merge-branch-route > span { display: grid; gap: 5px; min-width: 0; color: var(--text); }
+.merge-branch-route > span > small { color: var(--text-dim); font-size: 10px; }
+.merge-branch-route code { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); overflow-wrap: anywhere; }
+.merge-branch-route > svg { flex: 0 0 auto; color: var(--primary); }
+.branch-merge-dialog > .dialog-description { margin-top: 13px; }
+.merge-loading { display: flex; align-items: center; gap: 8px; padding: 18px 5px; color: var(--text-muted); font-size: 11px; }
+.merge-error, .merge-warning { margin: 10px 0; padding: 10px 11px; border-radius: 6px; background: var(--danger-soft, #bd4d4d12); color: var(--danger); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.merge-preview-heading { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 8px; font-size: 11px; }
+.merge-preview-heading > span { color: var(--text-dim); font: 10px var(--mono); }
+.merge-commit-list { display: grid; gap: 3px; max-height: 280px; overflow: auto; padding: 5px; border: 1px solid var(--border); border-radius: 7px; }
+.merge-commit-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px; border-radius: 5px; text-align: left; }
+.merge-commit-row:hover { background: var(--bg-soft); }
+.merge-commit-copy { flex: 1; min-width: 0; }
+.merge-commit-copy > strong, .merge-commit-copy > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merge-commit-copy > strong { color: var(--text); font-size: 11px; font-weight: 500; }
+.merge-commit-copy > small { margin-top: 4px; color: var(--text-dim); font-size: 10px; }
+.merge-commit-row > code { flex: 0 0 auto; color: var(--text-dim); font: 10px var(--mono); }
+.merge-truncated, .merge-empty { padding: 12px 8px; color: var(--text-dim); font-size: 10px; }
+.merge-preview-note { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin-top: 12px; color: var(--text-dim); font-size: 10px; }
+.merge-preview-note code { color: var(--text-muted); font: 10px var(--mono); }
+.merge-dialog-actions { justify-content: flex-end; gap: 9px; }
+.merge-dialog-actions > .primary-button { min-width: 110px; justify-content: center; }
 .toast { position: fixed; z-index: 2000; top: 64px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: min(600px, 80vw); background: var(--bg-card); color: var(--primary); border: 1px solid #16826c35; box-shadow: 0 8px 25px #17352514; padding: 12px 14px; border-radius: 9px; font-size: 11px; animation: fade-in .2s ease-out; }
 .toast > span { overflow-wrap: anywhere; max-height: 150px; overflow: auto; line-height: 1.7; }
 .toast > button { display: flex; padding: 3px; color: var(--text-muted); margin-left: 10px; }

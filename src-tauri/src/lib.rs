@@ -231,6 +231,31 @@ async fn push_repository(path: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::push_repository(&path)).await
 }
 
+#[tauri::command]
+async fn preview_merge(
+    path: String,
+    source: String,
+    target: String,
+) -> Result<git::MergePreview, String> {
+    blocking(move || git::preview_merge(&path, &source, &target)).await
+}
+
+#[tauri::command]
+async fn merge_branches(
+    path: String,
+    source: String,
+    target: String,
+    source_head: String,
+    target_head: String,
+) -> Result<git::MergeResult, String> {
+    blocking(move || git::merge_branches(&path, &source, &target, &source_head, &target_head)).await
+}
+
+#[tauri::command]
+async fn read_commit_files(path: String, commit: String) -> Result<Vec<String>, String> {
+    blocking(move || git::commit_files(&path, &commit)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -261,7 +286,10 @@ pub fn run() {
             act_on_commit,
             checkout_branch,
             fetch_repository,
-            push_repository
+            push_repository,
+            preview_merge,
+            merge_branches,
+            read_commit_files
         ])
         .run(tauri::generate_context!())
         .expect("无法启动 easygit");
