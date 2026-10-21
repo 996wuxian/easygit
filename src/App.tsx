@@ -1,26 +1,43 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconGitCommit, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconGitCommit, IconKey, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, ActivityPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
 import { Dialog } from './components/Dialog';
 import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
-import { isDesktop, type GitCommit } from './services/git';
+import { git, isDesktop, type GitCommit } from './services/git';
+import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { useRepository, type RecentRepository } from './services/useRepository';
 
-type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'branches' | null;
+type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'branches' | null;
 type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
+const AI_SETTINGS_KEY = 'easygit.ai-commit-settings.v1';
+const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
 function readSidebarOrder(): string[] { try { const value: unknown = JSON.parse(localStorage.getItem(SIDEBAR_ORDER_KEY) ?? '[]'); return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []; } catch { return []; } }
 function readTheme(): 'light' | 'dark' { try { return localStorage.getItem('esaygit.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }
+function readAiSettings(): AiCommitSettings {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY) ?? 'null');
+    if (!value || typeof value !== 'object') return DEFAULT_AI_SETTINGS;
+    const saved = value as Partial<AiCommitSettings>;
+    return {
+      baseUrl: typeof saved.baseUrl === 'string' ? saved.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
+      model: typeof saved.model === 'string' ? saved.model : DEFAULT_AI_SETTINGS.model,
+      apiKey: typeof saved.apiKey === 'string' ? saved.apiKey : '',
+    };
+  } catch { return DEFAULT_AI_SETTINGS; }
+}
 
 export default function App({ onReady }: { onReady: () => void }) {
   const repo = useRepository(onReady);
   const panels = usePanelLayout();
   const { snapshot, hasRepository, busy, notify } = repo;
   const [theme, setTheme] = useState(readTheme);
+  const [aiSettings, setAiSettings] = useState(readAiSettings);
+  const [generatingCommitMessage, setGeneratingCommitMessage] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
   const [path, setPath] = useState('');
   const [selected, setSelected] = useState<string | null>(snapshot.files[0]?.path ?? null);
@@ -208,11 +225,37 @@ export default function App({ onReady }: { onReady: () => void }) {
     if (await repo.discard(discardConfirmation.files)) setDiscardConfirmation(null);
   }
 
+  async function generateStagedCommitMessage() {
+    const repositoryPath = snapshot.path;
+    if (!repositoryPath || busy || generatingCommitMessage) return;
+    if (!aiSettings.apiKey.trim()) {
+      setModal('ai-settings');
+      notify('请先配置 AI API Key。', true);
+      return;
+    }
+    setGeneratingCommitMessage(true);
+    try {
+      const diff = await git.stagedDiff(repositoryPath);
+      const result = await generateCommitMessage(aiSettings, diff);
+      const message = parseGeneratedCommitMessage(result);
+      setCommitDrafts(current => ({ ...current, [repositoryPath]: message }));
+      notify('已生成提交信息');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setGeneratingCommitMessage(false);
+    }
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     try { localStorage.setItem('esaygit.theme', theme); } catch { /* optional preference */ }
   }, [theme]);
+
+  useEffect(() => {
+    try { localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(aiSettings)); } catch { /* optional preference */ }
+  }, [aiSettings]);
 
   useEffect(() => {
     const current = snapshot.files.find(f => f.path === selected);
@@ -269,7 +312,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : snapshot.hasUpstream ? `推送当前分支（${snapshot.ahead} 个待推送提交）` : '首次推送并设置上游分支';
   const renderPanel = (id: PanelId) => {
     switch (id) {
-      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
+      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} notify={notify} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
       case 'commits': return <CommitsPanel snapshot={snapshot} onSelect={setSelectedCommit} />;
@@ -356,7 +399,21 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'branches' && <Dialog title="切换分支" onClose={closeModal}><p className="dialog-description">当前分支：<code>{snapshot.branch}</code></p><BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name).then(ok => { if (ok) closeModal(); }); }} /></Dialog>}
 
-    {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}><div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div><button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button><div className="about-app"><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>0.1.0</span></strong><p>本地 Git 客户端。</p></div><span>Tauri + React</span></div></Dialog>}
+    {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}><div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div><button className="settings-link" onClick={() => setModal('ai-settings')}><IconKey size={19} /><span><strong>AI 提交信息</strong><small>{aiSettings.apiKey ? '已配置第三方 AI 服务' : '配置 API Key，按差异生成提交信息'}</small></span><IconChevronRight size={17} /></button><button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button><div className="about-app"><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>0.1.0</span></strong><p>本地 Git 客户端。</p></div><span>Tauri + React</span></div></Dialog>}
+
+    {modal === 'ai-settings' && <Dialog title="AI 提交信息" onClose={closeModal}>
+      <p className="dialog-description">配置兼容 OpenAI Chat Completions 的第三方服务。默认使用 DeepSeek；提交信息会按规范生成，例如 <code>feat: 添加功能</code>、<code>docs: 更新说明</code>。设置会保存在本机应用配置中。</p>
+      <div className="ai-settings-form">
+        <label className="field-label" htmlFor="ai-base-url">API 地址</label>
+        <input id="ai-base-url" className="text-field mono" value={aiSettings.baseUrl} placeholder="https://api.deepseek.com" spellCheck={false} onChange={event => setAiSettings(current => ({ ...current, baseUrl: event.target.value }))} />
+        <label className="field-label" htmlFor="ai-model">模型名称</label>
+        <input id="ai-model" className="text-field mono" value={aiSettings.model} placeholder="deepseek-flash" spellCheck={false} onChange={event => setAiSettings(current => ({ ...current, model: event.target.value }))} />
+        <label className="field-label" htmlFor="ai-api-key">API Key</label>
+        <input id="ai-api-key" className="text-field mono" type="password" autoComplete="new-password" value={aiSettings.apiKey} placeholder="粘贴第三方服务的 API Key" onChange={event => setAiSettings(current => ({ ...current, apiKey: event.target.value }))} />
+      </div>
+      <p className="ai-settings-notice">点击生成时，当前仓库的已暂存差异会发送到上述服务以生成提交信息。</p>
+      <div className="dialog-action-row"><button className="text-button" onClick={() => setAiSettings(DEFAULT_AI_SETTINGS)}>恢复 DeepSeek 默认值</button><button className="primary-button" onClick={closeModal}><IconCheck size={16} />完成</button></div>
+    </Dialog>}
 
     {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconGitCommit size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
 

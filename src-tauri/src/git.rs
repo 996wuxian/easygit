@@ -437,6 +437,31 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
     })
 }
 
+pub fn read_staged_diff(path: &str) -> Result<String, String> {
+    const MAX_DIFF_CHARS: usize = 30_000;
+    with_repository(path, |root| {
+        let bytes = run(
+            root,
+            &[
+                "diff",
+                "--cached",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+            ],
+        )?;
+        let diff = String::from_utf8_lossy(&bytes).into_owned();
+        if diff.chars().count() <= MAX_DIFF_CHARS {
+            return Ok(diff);
+        }
+
+        let mut bounded: String = diff.chars().take(MAX_DIFF_CHARS).collect();
+        bounded.push_str("\n\n[差异内容过长，后续部分已省略]");
+        Ok(bounded)
+    })
+}
+
 pub fn stage_files(path: &str, files: &[String]) -> Result<RepositorySnapshot, String> {
     validate_files(files)?;
     with_repository(path, |root| {
@@ -639,6 +664,27 @@ mod tests {
             fs::read_to_string(directory.path().join(filename)).unwrap(),
             "second line\n"
         );
+    }
+
+    #[test]
+    fn staged_diff_excludes_unstaged_worktree_changes() {
+        let directory = repo();
+        let path = directory.path().to_str().unwrap();
+        let filename = "tracked.txt";
+        fs::write(directory.path().join(filename), "base\n").unwrap();
+        stage_files(path, &[filename.to_owned()]).unwrap();
+        create_commit(path, "initial").unwrap();
+
+        fs::write(directory.path().join(filename), "staged content\n").unwrap();
+        stage_files(path, &[filename.to_owned()]).unwrap();
+        fs::write(directory.path().join(filename), "unstaged content\n").unwrap();
+        fs::write(directory.path().join("unstaged.txt"), "untracked content\n").unwrap();
+
+        let diff = read_staged_diff(path).unwrap();
+
+        assert!(diff.contains("+staged content"));
+        assert!(!diff.contains("unstaged content"));
+        assert!(!diff.contains("unstaged.txt"));
     }
 
     #[test]

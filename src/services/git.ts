@@ -32,21 +32,22 @@ export function emptyRepository(): RepositorySnapshot {
 }
 export const isDesktop = () => '__TAURI_INTERNALS__' in window;
 
-async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (!isDesktop()) throw new Error('请在 easygit 桌面应用中打开本地仓库。');
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
 }
 
 export const git = {
-  bootstrap: () => call<BootstrapResult>('bootstrap'),
-  open: (path: string) => call<RepositorySnapshot>('open_repository', { path }),
-  diff: (path: string, file: string, staged: boolean) => call<string>('read_diff', { path, file, staged }),
-  stage: (path: string, files: string[]) => call<RepositorySnapshot>('stage_files', { path, files }),
-  unstage: (path: string, files: string[]) => call<RepositorySnapshot>('unstage_files', { path, files }),
-  discard: (path: string, files: string[]) => call<RepositorySnapshot>('discard_changes', { path, files }),
-  commit: (path: string, message: string) => call<RepositorySnapshot>('create_commit', { path, message }),
-  checkout: (path: string, branch: string) => call<RepositorySnapshot>('checkout_branch', { path, branch }),
-  fetch: (path: string) => call<RepositorySnapshot>('fetch_repository', { path }),
-  push: (path: string) => call<RepositorySnapshot>('push_repository', { path }),
+  bootstrap: () => invokeCommand<BootstrapResult>('bootstrap'),
+  open: (path: string) => invokeCommand<RepositorySnapshot>('open_repository', { path }),
+  diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
+  stagedDiff: (path: string) => invokeCommand<string>('read_staged_diff', { path }),
+  stage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('stage_files', { path, files }),
+  unstage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('unstage_files', { path, files }),
+  discard: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('discard_changes', { path, files }),
+  commit: (path: string, message: string) => invokeCommand<RepositorySnapshot>('create_commit', { path, message }),
+  checkout: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch }),
+  fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
+  push: (path: string) => invokeCommand<RepositorySnapshot>('push_repository', { path }),
 };
