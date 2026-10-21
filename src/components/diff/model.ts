@@ -1,4 +1,53 @@
-import type { FileComparison } from '../../services/git';
+import type { DiffBlock, FileComparison } from '../../services/git';
+
+export function getDiffBlocks(diff: string): DiffBlock[] {
+  if (/^@@@ |^diff --(?:cc|combined) /m.test(diff)) return [];
+  const blocks: DiffBlock[] = [];
+  let original = 0;
+  let modified = 0;
+  let inHunk = false;
+  let block: DiffBlock | null = null;
+  let previous = '';
+  for (const raw of diff.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (hunk) {
+      original = Number(hunk[1]) - (hunk[2] === '0' ? 0 : 1);
+      modified = Number(hunk[3]) - (hunk[4] === '0' ? 0 : 1);
+      inHunk = true;
+      block = null;
+    } else if (line.startsWith('diff --')) {
+      inHunk = false;
+      block = null;
+    } else if (inHunk && (line.startsWith('-') || line.startsWith('+'))) {
+      if (!block) {
+        block = { originalStart: original, modifiedStart: modified, removed: [], added: [], originalNoNewline: false, modifiedNoNewline: false };
+        blocks.push(block);
+      }
+      if (line[0] === '-') { block.removed.push(line.slice(1)); original++; }
+      else { block.added.push(line.slice(1)); modified++; }
+      previous = line[0];
+    } else if (inHunk && line.startsWith('\\') && block) {
+      if (previous === '-') block.originalNoNewline = true;
+      if (previous === '+') block.modifiedNoNewline = true;
+    } else if (inHunk && line.startsWith(' ')) {
+      original++;
+      modified++;
+      block = null;
+    }
+  }
+  return blocks;
+}
+
+export function diffBlockPreview(block: DiffBlock) {
+  const range = (start: number, count: number) => `${count ? start + 1 : start},${count}`;
+  const lines = [`@@ -${range(block.originalStart, block.removed.length)} +${range(block.modifiedStart, block.added.length)} @@`];
+  for (const [values, prefix, noNewline] of [[block.removed, '-', block.originalNoNewline], [block.added, '+', block.modifiedNoNewline]] as const) {
+    lines.push(...values.map(line => prefix + line));
+    if (values.length && noNewline) lines.push('\\ No newline at end of file');
+  }
+  return lines.join('\n') + '\n';
+}
 
 export interface SourceLine {
   number: number;

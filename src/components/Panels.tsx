@@ -4,10 +4,10 @@ import type { GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
 import './panels.css';
 
-export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onCommit, canPush, pushTitle, onPush, onGenerateCommitMessage, generatingCommitMessage, busy }: {
+export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onResolveConflict, onCommit, canPush, pushTitle, onPush, onGenerateCommitMessage, generatingCommitMessage, busy }: {
   message: string; onMessageChange: (message: string) => void;
   snapshot: RepositorySnapshot; selected: string | null; onSelect: (path: string, staged: boolean) => void;
-  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onCommit: (message: string) => Promise<boolean>; canPush: boolean; pushTitle: string; onPush: () => void; onGenerateCommitMessage: () => void; generatingCommitMessage: boolean; busy: boolean;
+  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onResolveConflict: (file: string) => void; onCommit: (message: string) => Promise<boolean>; canPush: boolean; pushTitle: string; onPush: () => void; onGenerateCommitMessage: () => void; generatingCommitMessage: boolean; busy: boolean;
 }) {
   const [filter, setFilter] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState({ pending: false, staged: false });
@@ -25,7 +25,7 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
         <span className={`file-status ${f.untracked ? 'new' : f.conflicted ? 'conflict' : ''}`}>{f.conflicted ? '!' : f.untracked ? 'U' : f.indexStatus === 'A' ? 'A' : f.indexStatus === 'D' || f.worktreeStatus === 'D' ? 'D' : 'M'}</span>
       </button>
       {!isStaged && <button className="file-action icon-button discard-file-action" title={f.conflicted ? '冲突文件暂时无法撤回' : '撤回更改'} aria-label={`撤回更改 ${f.path}`} disabled={busy || f.conflicted} onClick={() => onDiscard([f.path], 'file')}><IconTrash size={15} /></button>}
-      <button className="file-action icon-button" title={isStaged ? '取消暂存' : f.conflicted ? '请先在编辑器中解决冲突并暂存' : '暂存文件'} aria-label={`${isStaged ? '取消暂存' : f.conflicted ? '标记已解决' : '暂存'} ${f.path}`} disabled={busy || f.conflicted} onClick={() => isStaged ? onUnstage([f.path]) : onStage([f.path])}>{isStaged ? <IconMinus size={16} /> : <IconPlus size={16} />}</button>
+      <button className="file-action icon-button" title={isStaged ? '取消暂存' : f.conflicted ? '打开冲突解决工具' : '暂存文件'} aria-label={`${isStaged ? '取消暂存' : f.conflicted ? '解决冲突' : '暂存'} ${f.path}`} disabled={busy} onClick={() => f.conflicted ? onResolveConflict(f.path) : isStaged ? onUnstage([f.path]) : onStage([f.path])}>{isStaged ? <IconMinus size={16} /> : f.conflicted ? <IconCode size={16} /> : <IconPlus size={16} />}</button>
     </div>;
   }
   return <div className="changes-content">

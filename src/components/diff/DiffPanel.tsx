@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconArrowsMaximize, IconCode, IconCopy, IconFileCode, IconLoader2, IconTextWrap, IconX } from '@tabler/icons-react';
-import { git, type RepositorySnapshot } from '../../services/git';
+import { git, type DiffBlock, type RepositorySnapshot } from '../../services/git';
 import { ExpandedDiff } from './ExpandedDiff';
 import { isCombinedDiff, UnifiedDiff } from './UnifiedDiff';
 import { countDiffChanges } from './model';
+import { DiffFileActions, type DiffActions } from './DiffFileActions';
 import '../panels.css';
 
 type DiffState =
@@ -12,7 +13,7 @@ type DiffState =
   | { key: string; status: 'ready' | 'refreshing'; diff: string }
   | { key: string; status: 'error'; error: string };
 
-export function DiffPanel({ snapshot, selected, staged, onStagedChange, onSelectFile, notify }: {
+export function DiffPanel({ snapshot, selected, staged, onStagedChange, onSelectFile, notify, ...actions }: DiffActions & {
   snapshot: RepositorySnapshot; selected: string | null; staged: boolean;
   onStagedChange: (value: boolean) => void; onSelectFile?: (path: string) => void;
   notify: (message: string, error?: boolean) => void;
@@ -43,13 +44,17 @@ export function DiffPanel({ snapshot, selected, staged, onStagedChange, onSelect
   const error = current?.status === 'error' ? current.error : '';
   const combined = isCombinedDiff(diff);
   const { added, removed } = countDiffChanges(diff);
+  const selectedFile = snapshot.files.find(file => file.path === selected);
+  const discardBlock = selected && !staged && !actions.busy && !loading && !error && selectedFile?.unstaged && !selectedFile.conflicted && selectedFile.worktreeStatus !== 'R'
+    ? (block: DiffBlock) => actions.onDiscardBlock(selected, block) : undefined;
   return <div className="diff-content">
     <div className="diff-toolbar"><div className="segmented"><button className={!staged ? 'active' : ''} onClick={() => onStagedChange(false)}>工作区</button><button className={staged ? 'active' : ''} onClick={() => onStagedChange(true)}>暂存区</button></div><div className="diff-tools">{!combined && <><span className="diff-add">+{added}</span><span className="diff-remove">−{removed}</span></>}<i /><button className={`icon-button ${wrap ? 'active' : ''}`} aria-label="切换代码自动换行" title="自动换行" onClick={() => setWrap(value => !value)}><IconTextWrap size={16} /></button><button className="icon-button" disabled={!diff} title="复制 diff" aria-label="复制 diff" onClick={() => { void navigator.clipboard.writeText(diff).then(() => notify('Diff 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button><button className="icon-button" aria-label="展开代码差异" title="展开代码差异" disabled={!selected} onClick={() => setExpanded(true)}><IconArrowsMaximize size={16} /></button></div></div>
+    <DiffFileActions {...actions} file={snapshot.files.find(file => file.path === selected)} staged={staged} />
     <div className="diff-file-path"><IconFileCode size={14} /><span>{selected ?? '选择一个文件以查看更改'}</span><span className="language-tag">{selected?.split('.').pop()?.toUpperCase() ?? 'DIFF'}</span></div>
     <div className={`code-scroll ${wrap ? 'wrap-code' : ''}`} aria-label="文件差异" aria-busy={loading}>
-      {showLoading ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取差异…</span></div> : error ? <div className="diff-empty"><IconX size={24} /><span>{error}</span></div> : !selected || !diff ? <div className="diff-empty"><IconCode size={30} stroke={1.3} /><strong>{selected ? '没有差异' : '选择一个文件'}</strong><span>{selected ? '可切换到工作区或暂存区查看。' : '从左侧文件列表查看更改。'}</span></div> : <UnifiedDiff diff={diff} />}
+      {showLoading ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取差异…</span></div> : error ? <div className="diff-empty"><IconX size={24} /><span>{error}</span></div> : !selected || !diff ? <div className="diff-empty"><IconCode size={30} stroke={1.3} /><strong>{selected ? '没有差异' : '选择一个文件'}</strong><span>{selected ? '可切换到工作区或暂存区查看更改。' : '从左侧文件列表查看更改。'}</span></div> : <UnifiedDiff diff={diff} onDiscardBlock={discardBlock} />}
     </div>
     <div className="diff-footer"><span><span className="tiny-dot" />{staged ? '已暂存的更改' : '未暂存的更改'}</span><span>UTF-8 <i /> {combined ? '冲突原始差异' : '统一视图'}</span></div>
-    {expanded && selected && createPortal(<ExpandedDiff snapshot={snapshot} selected={selected} staged={staged} compactDiff={diff} compactLoading={showLoading} compactError={error} onStagedChange={onStagedChange} onSelectFile={onSelectFile} notify={notify} onClose={() => setExpanded(false)} />, document.body)}
+    {expanded && selected && createPortal(<ExpandedDiff {...actions} snapshot={snapshot} selected={selected} staged={staged} compactDiff={diff} compactLoading={showLoading} compactError={error} onStagedChange={onStagedChange} onSelectFile={onSelectFile} notify={notify} onClose={() => setExpanded(false)} />, document.body)}
   </div>;
 }

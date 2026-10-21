@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyRepository, git, isDesktop, type CommitAction, type RepositorySnapshot } from './git';
+import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type RepositorySnapshot } from './git';
 import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
@@ -115,6 +115,8 @@ export function useRepository(onReady: () => void) {
   const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths));
   const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths));
   const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回全部未暂存更改', path => git.discard(path, paths));
+  const discardBlock = (file: string, block: DiffBlock) => run('已撤回所选变更块，其他更改已保留', path => git.discardBlock(path, file, block));
+  const resolveConflict = (file: string, revision: string, resolution: ConflictResolution, content?: string) => run('冲突已解决并暂存', path => git.resolveConflict(path, file, revision, resolution, content));
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
@@ -139,5 +141,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
 }

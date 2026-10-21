@@ -1,26 +1,32 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { FileComparison } from '../../services/git';
-import { buildComparisonChanges, buildComparisonRows, type ComparisonChange, type SourceLine } from './model';
+import type { DiffBlock, FileComparison } from '../../services/git';
+import { IconArrowBackUp } from '@tabler/icons-react';
+import { buildComparisonChanges, buildComparisonRows, getDiffBlocks, type ComparisonChange, type SourceLine } from './model';
 import { ChangeOverview } from './ChangeOverview';
 import { Syntax } from './Syntax';
 
 const ROW_HEIGHT = 24;
 const OVERSCAN = 20;
 
-const SourceRow = memo(function SourceRow({ line }: { line: SourceLine | null }) {
+const SourceRow = memo(function SourceRow({ line, block, blockNumber, onDiscardBlock }: { line: SourceLine | null; block?: DiffBlock; blockNumber?: number; onDiscardBlock?: (block: DiffBlock) => void }) {
   return <div className={`source-line ${line?.kind ?? 'empty'}`}>
     <span className="source-line-number" aria-hidden="true">{line?.number ?? ''}</span>
-    <span className="source-line-sign" aria-hidden="true">{line?.kind === 'added' ? '+' : line?.kind === 'removed' ? '−' : ''}</span>
+    <span className="source-line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockNumber}`} title="撤回该变更块，保留其他更改" onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : <span aria-hidden="true">{line?.kind === 'added' ? '+' : line?.kind === 'removed' ? '−' : ''}</span>}</span>
     <code>{line && <Syntax text={line.text} />}</code>
   </div>;
 });
 
-export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath }: {
+export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath, onDiscardBlock }: {
   comparison: FileComparison;
   originalLabel: string; modifiedLabel: string; originalPath: string; modifiedPath: string;
+  onDiscardBlock?: (block: DiffBlock) => void;
 }) {
   const rows = useMemo(() => buildComparisonRows(comparison), [comparison.diff, comparison.unchanged]);
   const changes = useMemo(() => buildComparisonChanges(rows), [rows]);
+  const blockStarts = useMemo(() => {
+    const blocks = getDiffBlocks(comparison.diff);
+    return new Map(changes.map((change, index) => [change.start, { block: blocks[index], number: index + 1 }]));
+  }, [changes, comparison.diff]);
   const originalRef = useRef<HTMLDivElement>(null);
   const modifiedRef = useRef<HTMLDivElement>(null);
   const overviewViewportRef = useRef<HTMLDivElement>(null);
@@ -92,7 +98,10 @@ export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPa
         <div className="split-source-path" title={original ? originalPath : modifiedPath}>{original ? originalPath : modifiedPath}</div>
         <div className="split-source-scroll" ref={original ? originalRef : modifiedRef} role="region" aria-label={original ? '原始文件源码' : '变更后文件源码'} tabIndex={0} onScroll={event => synchronize(event.currentTarget, original ? modifiedRef.current : originalRef.current)}>
           {rows.length ? <div className="source-lines" style={{ height: rows.length * ROW_HEIGHT, width: `max(100%, calc(${widths[side]}ch + 88px))` }}>
-            <div className="source-visible-lines" style={{ top: start * ROW_HEIGHT }}>{rows.slice(start, end).map((row, index) => <SourceRow line={row[side]} key={start + index} />)}</div>
+            <div className="source-visible-lines" style={{ top: start * ROW_HEIGHT }}>{rows.slice(start, end).map((row, index) => {
+              const action = !original ? blockStarts.get(start + index) : undefined;
+              return <SourceRow line={row[side]} block={action?.block} blockNumber={action?.number} onDiscardBlock={onDiscardBlock} key={start + index} />;
+            })}</div>
           </div> : <div className="diff-empty"><span>{exists ? '空文件' : '此版本中没有该文件'}</span></div>}
         </div>
       </section>;

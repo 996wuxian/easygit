@@ -1,7 +1,13 @@
 use serde::Serialize;
 mod commit_actions;
 mod comparison;
+mod diff_blocks;
+pub use diff_blocks::{discard_diff_block, DiffBlock};
+mod conflicts;
+#[cfg(test)]
+mod conflicts_tests;
 pub use commit_actions::{act_on_commit, CommitAction};
+pub use conflicts::{read_conflict, resolve_conflict, ConflictFile, ConflictResolution};
 mod history;
 pub use comparison::{read_file_comparison, FileComparison};
 use std::{
@@ -415,6 +421,45 @@ fn validate_files(files: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+pub fn open_repository_directory(path: &str) -> Result<(), String> {
+    let root = repository_root(path)?;
+    #[cfg(windows)]
+    let mut opener = {
+        use std::os::windows::process::CommandExt;
+        let display = root.to_string_lossy();
+        let directory = if let Some(unc) = display.strip_prefix("\\\\?\\UNC\\") {
+            format!("\\\\{unc}")
+        } else {
+            display
+                .strip_prefix("\\\\?\\")
+                .unwrap_or(&display)
+                .to_owned()
+        };
+        let mut command = Command::new("explorer.exe");
+        command.arg(directory).creation_flags(0x08000000);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut opener = {
+        let mut command = Command::new("open");
+        command.arg(&root);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut opener = {
+        let mut command = Command::new("xdg-open");
+        command.arg(&root);
+        command
+    };
+    opener
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开系统文件管理器：{error}"))
+}
+
 pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String> {
     validate_files(&[file.to_owned()])?;
     with_repository(path, |root| {
@@ -433,6 +478,8 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
                     "--no-color",
                     "--no-ext-diff",
                     "--no-textconv",
+                    "--diff-algorithm=myers",
+                    "--no-indent-heuristic",
                     "--",
                     null_file,
                     file,
@@ -443,7 +490,14 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
             }
             return Err(error_text(&result));
         }
-        let mut args = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv"];
+        let mut args = vec![
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--diff-algorithm=myers",
+            "--no-indent-heuristic",
+        ];
         if staged {
             args.push("--cached");
         }

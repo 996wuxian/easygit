@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FileComparison } from '../../services/git';
-import { buildComparisonChanges, buildComparisonRows, countDiffChanges } from './model';
+import { buildComparisonChanges, buildComparisonRows, countDiffChanges, diffBlockPreview, getDiffBlocks } from './model';
 
 function comparison(diff: string, unchanged: string | null = null): FileComparison {
   return { diff, unchanged, binary: false, originalExists: true, modifiedExists: true };
@@ -58,5 +58,32 @@ describe('full source comparison alignment', () => {
     expect(buildComparisonChanges(buildComparisonRows(comparison('@@ -1,2 +0,0 @@\n-one\n-two\n')))).toEqual([
       { start: 0, end: 2, added: 0, removed: 2, originalLine: 1, modifiedLine: null },
     ]);
+  });
+});
+
+describe('可独立撤回的变更块', () => {
+  it('把同一个 Git hunk 中由上下文分隔的修改拆开，记录两侧独立的行偏移', () => {
+    const blocks = getDiffBlocks('@@ -1,5 +1,6 @@\n start\n-old\n+new1\n+new2\n middle\n-remove\n tail\n+extra\n');
+    expect(blocks.map(block => [block.originalStart, block.modifiedStart, block.removed, block.added])).toEqual([
+      [1, 1, ['old'], ['new1', 'new2']], [3, 4, ['remove'], []], [5, 5, [], ['extra']],
+    ]);
+    expect(getDiffBlocks(diffBlockPreview(blocks[1]))).toEqual([blocks[1]]);
+  });
+
+  it('保留文件末尾无换行标记，正确处理空文件、纯新增和纯删除', () => {
+    const [modified] = getDiffBlocks('@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n');
+    expect(modified.originalNoNewline).toBe(true);
+    expect(modified.modifiedNoNewline).toBe(true);
+    expect(getDiffBlocks(diffBlockPreview(modified))).toEqual([modified]);
+    expect(getDiffBlocks('@@ -0,0 +1,2 @@\n+a\n+b\n')[0]).toMatchObject({ originalStart: 0, modifiedStart: 0, removed: [], added: ['a', 'b'] });
+    expect(getDiffBlocks('@@ -1,2 +0,0 @@\n-a\n-b\n')[0]).toMatchObject({ originalStart: 0, modifiedStart: 0, removed: ['a', 'b'], added: [] });
+  });
+
+  it('解析多个 hunk 以及类似文件头的代码，冲突差异不提供普通区块撤回', () => {
+    const blocks = getDiffBlocks('diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -2 +2 @@\n--- old\n+++ new\n@@ -8 +8 @@\n-x\n+y\n');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].removed).toEqual(['-- old']);
+    expect(blocks[1].originalStart).toBe(7);
+    expect(getDiffBlocks('diff --cc file\n@@@ -1 -1 +1 @@@\n-old\n+new')).toEqual([]);
   });
 });

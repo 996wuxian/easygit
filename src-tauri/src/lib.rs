@@ -29,6 +29,11 @@ async fn open_repository(path: String) -> Result<RepositorySnapshot, String> {
 }
 
 #[tauri::command]
+async fn open_repository_directory(path: String) -> Result<(), String> {
+    blocking(move || git::open_repository_directory(&path)).await
+}
+
+#[tauri::command]
 async fn read_diff(path: String, file: String, staged: bool) -> Result<String, String> {
     blocking(move || git::read_diff(&path, &file, staged)).await
 }
@@ -153,6 +158,32 @@ async fn discard_changes(path: String, files: Vec<String>) -> Result<RepositoryS
 }
 
 #[tauri::command]
+async fn discard_diff_block(
+    path: String,
+    file: String,
+    block: git::DiffBlock,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::discard_diff_block(&path, &file, &block)).await
+}
+
+#[tauri::command]
+async fn read_conflict(path: String, file: String) -> Result<git::ConflictFile, String> {
+    blocking(move || git::read_conflict(&path, &file)).await
+}
+
+#[tauri::command]
+async fn resolve_conflict(
+    path: String,
+    file: String,
+    revision: String,
+    resolution: git::ConflictResolution,
+    content: Option<String>,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::resolve_conflict(&path, &file, &revision, resolution, content.as_deref()))
+        .await
+}
+
+#[tauri::command]
 async fn create_commit(path: String, message: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::create_commit(&path, &message)).await
 }
@@ -197,6 +228,7 @@ pub fn run() {
             storage::open_data_directory,
             bootstrap,
             open_repository,
+            open_repository_directory,
             read_diff,
             read_file_comparison,
             read_staged_diff,
@@ -204,6 +236,9 @@ pub fn run() {
             stage_files,
             unstage_files,
             discard_changes,
+            discard_diff_block,
+            read_conflict,
+            resolve_conflict,
             create_commit,
             act_on_commit,
             checkout_branch,

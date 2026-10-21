@@ -6,9 +6,11 @@ import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, Activ
 import { WindowControls } from './components/WindowControls';
 import { Dialog } from './components/Dialog';
 import { DiscardChangesDialog } from './components/DiscardChangesDialog';
+import { ConflictResolutionDialog } from './components/diff/ConflictResolutionDialog';
+import { DiscardBlockDialog } from './components/diff/DiscardBlockDialog';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
-import { git, isDesktop, type GitCommit } from './services/git';
+import { git, isDesktop, type DiffBlock, type GitCommit } from './services/git';
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { CommitRefs } from './components/commits/CommitsPanel';
 import { commitStatus } from './components/commits/model';
@@ -67,7 +69,9 @@ export default function App({ onReady }: { onReady: () => void }) {
   const suppressRepositoryClick = useRef(false);
   const repositoryListRef = useRef<HTMLDivElement>(null);
   const [repositoryScroll, setRepositoryScroll] = useState({ canUp: false, canDown: false });
-  const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all' } | null>(null);
+  const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all'; overlay: boolean } | null>(null);
+  const [conflictFile, setConflictFile] = useState<string | null>(null);
+  const [blockDiscard, setBlockDiscard] = useState<{ file: string; block: DiffBlock } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
   const workspaces = useMemo(() => {
     const available = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
@@ -227,14 +231,20 @@ export default function App({ onReady }: { onReady: () => void }) {
     }
     cancelRemoval();
   }
-  function requestDiscard(files: string[], scope: 'file' | 'all') {
+  function requestDiscard(files: string[], scope: 'file' | 'all', overlay = false) {
     if (busy || !files.length) return;
     const selectedFiles = [...files];
-    setDiscardConfirmation({ files: selectedFiles, untrackedFiles: snapshot.files.filter(file => selectedFiles.includes(file.path) && file.untracked).map(file => file.path), scope });
+    setDiscardConfirmation({ files: selectedFiles, untrackedFiles: snapshot.files.filter(file => selectedFiles.includes(file.path) && file.untracked).map(file => file.path), scope, overlay });
   }
   async function confirmDiscard() {
     if (!discardConfirmation) return;
     if (await repo.discard(discardConfirmation.files)) setDiscardConfirmation(null);
+  }
+  function requestBlockDiscard(file: string, block: DiffBlock) {
+    if (!busy && !staged && snapshot.files.some(entry => entry.path === file && entry.unstaged && !entry.conflicted)) setBlockDiscard({ file, block });
+  }
+  async function confirmBlockDiscard() {
+    if (blockDiscard && await repo.discardBlock(blockDiscard.file, blockDiscard.block)) setBlockDiscard(null);
   }
 
   async function generateStagedCommitMessage() {
@@ -314,7 +324,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
-      if (removal || discardConfirmation) {
+      if (removal || discardConfirmation || conflictFile || blockDiscard) {
         if ((event.ctrlKey || event.metaKey) && ['k', 'o', 'r'].includes(event.key.toLowerCase())) event.preventDefault();
         return;
       }
@@ -325,7 +335,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     };
     window.addEventListener('keydown', shortcuts);
     return () => window.removeEventListener('keydown', shortcuts);
-  }, [modal, removal, discardConfirmation, repo.refresh]);
+  }, [modal, removal, discardConfirmation, conflictFile, blockDiscard, repo.refresh]);
 
   const actions = useMemo(() => [
     { id: 'open', icon: IconFolderOpen, title: '打开本地仓库', detail: '输入 Git 项目目录', shortcut: 'Ctrl O', run: () => setModal('open') },
@@ -336,14 +346,19 @@ export default function App({ onReady }: { onReady: () => void }) {
   ].filter(action => hasRepository || !['refresh', 'branches'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal]);
 
   async function openPath(value = path) { if (await repo.open(value)) { setPath(''); closeModal(); setActiveNav('workspace'); } }
+  async function openProjectDirectory() {
+    if (!snapshot.path) return;
+    try { await git.openDirectory(snapshot.path); }
+    catch (error) { notify(`无法打开项目文件夹：${String(error)}`, true); }
+  }
   const stagedCount = snapshot.files.filter(f => f.staged).length;
   const changedCount = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged).length;
   const canPush = Boolean(snapshot.remote && snapshot.head && !snapshot.branch.startsWith('detached@') && (!snapshot.hasUpstream || snapshot.ahead > 0));
   const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : snapshot.hasUpstream ? `推送当前分支（${snapshot.ahead} 个待推送提交）` : '首次推送并设置上游分支';
   const renderPanel = (id: PanelId) => {
     switch (id) {
-      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
-      case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} />;
+      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onResolveConflict={setConflictFile} onCommit={repo.commit} />;
+      case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} busy={busy} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope, true)} onResolveConflict={setConflictFile} onDiscardBlock={requestBlockDiscard} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
       case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={setSelectedCommit} busy={busy} notify={notify} onAction={async (commit, head, branch, action) => {
         const path = snapshot.path;
@@ -400,7 +415,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     {repositoryTooltip && createPortal(<div id="repository-tooltip" className="repository-tooltip" role="tooltip" style={{ left: repositoryTooltip.left, top: repositoryTooltip.top }}><strong>{repositoryTooltip.name}</strong><small>{repositoryTooltip.path}</small></div>, document.body)}
 
     <main className="main-scroll">
-      <div className="workspace-topbar"><button className="repository-switcher" title="切换仓库" aria-label="切换仓库" onClick={() => setModal('open')}><IconFolder size={19} /><strong>{snapshot.name || '选择仓库'}</strong><IconChevronDown size={13} /></button><div className="topbar-tools"><button className="topbar-search" onClick={() => setModal('commands')}><IconSearch size={16} /><span>搜索命令或操作</span><kbd>Ctrl K</kbd></button><button className="primary-button open-repo-button" onClick={() => setModal('open')}><IconPlus size={16} />打开仓库</button></div></div>
+      <div className="workspace-topbar"><button className="repository-switcher" title="切换仓库" aria-label="切换仓库" onClick={() => setModal('open')}><IconFolder size={19} /><strong>{snapshot.name || '选择仓库'}</strong><IconChevronDown size={13} /></button><div className="topbar-tools"><button className="topbar-search" onClick={() => setModal('commands')}><IconSearch size={16} /><span>搜索命令或操作</span><kbd>Ctrl K</kbd></button><button className="primary-button open-repo-button" aria-label="打开项目所在文件夹" title={snapshot.path ? `打开项目所在文件夹：${snapshot.path}` : '请先打开一个项目'} disabled={!hasRepository} onClick={() => { void openProjectDirectory(); }}><IconFolderOpen size={16} />打开项目所在文件夹</button></div></div>
       {hasRepository ? <div className="workspace-body">
         <section className="page-heading"><h1>工作区</h1><div className="heading-actions"><span className={`workspace-status ${snapshot.files.length ? 'has-changes' : ''}`}><span className="tiny-dot" />{snapshot.operation ? snapshot.operation : snapshot.files.length ? '有未提交更改' : '工作区干净'}</span><button className="icon-button" aria-label="刷新仓库" title="刷新仓库 · Ctrl R" disabled={busy} onClick={() => { void repo.refresh(); }}><IconRefresh size={17} className={busy ? 'spin' : ''} /></button></div></section>
 
@@ -462,7 +477,9 @@ export default function App({ onReady }: { onReady: () => void }) {
     {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconHistory size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><CommitRefs commit={selectedCommit} /><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><p>{commitStatus(selectedCommit, snapshot.hasUpstream).label}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
 
     {removal && <RemoveWorkspaceDialog workspace={removal.workspace} busy={busy} onCancel={cancelRemoval} onConfirm={confirmRemoval} />}
-    {discardConfirmation && <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => setDiscardConfirmation(null)} onConfirm={() => { void confirmDiscard(); }} />}
+    {discardConfirmation && (discardConfirmation.overlay ? createPortal(<DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />, document.body) : <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />)}
+    {conflictFile && createPortal(<ConflictResolutionDialog key={`${snapshot.path}:${conflictFile}`} path={snapshot.path} file={conflictFile} operation={snapshot.operation} busy={busy} onResolve={repo.resolveConflict} onClose={() => setConflictFile(null)} />, document.body)}
+    {blockDiscard && createPortal(<DiscardBlockDialog {...blockDiscard} untracked={Boolean(snapshot.files.find(file => file.path === blockDiscard.file)?.untracked)} busy={busy} onCancel={() => { if (!busy) setBlockDiscard(null); }} onConfirm={() => { void confirmBlockDiscard(); }} />, document.body)}
     {repo.notice && <div className={`toast ${repo.notice.error ? 'error' : ''}`} role={repo.notice.error ? 'alert' : 'status'}>{repo.notice.error ? <IconX size={17} /> : <IconCheck size={17} />}<span>{repo.notice.message}</span><button aria-label="关闭提示" onClick={() => repo.setNotice(null)}><IconX size={14} /></button></div>}
   </div>;
 }
