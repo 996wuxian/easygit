@@ -39,6 +39,7 @@ pub struct GitBranch {
     pub name: String,
     pub current: bool,
     pub remote: bool,
+    pub last_commit_date: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -268,7 +269,8 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         root,
         &[
             "for-each-ref",
-            "--format=%(refname:short)%00%(HEAD)%00%(refname)",
+            "--sort=-committerdate",
+            "--format=%(refname:short)%00%(HEAD)%00%(refname)%00%(committerdate:iso-strict)",
             "refs/heads",
             "refs/remotes",
         ],
@@ -280,6 +282,10 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
             let name = fields.next()?;
             let current = fields.next()? == "*";
             let reference = fields.next()?;
+            let last_commit_date = fields
+                .next()
+                .filter(|date| !date.is_empty())
+                .map(str::to_owned);
             if name.ends_with("/HEAD") {
                 return None;
             }
@@ -287,6 +293,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 name: name.to_owned(),
                 current,
                 remote: reference.starts_with("refs/remotes/"),
+                last_commit_date,
             })
         })
         .collect();
@@ -297,6 +304,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 name: branch.clone(),
                 current: true,
                 remote: false,
+                last_commit_date: None,
             },
         );
     }
@@ -634,6 +642,59 @@ mod tests {
         .unwrap();
         run(directory.path(), &["config", "commit.gpgsign", "false"]).unwrap();
         directory
+    }
+
+    #[test]
+    fn branch_snapshots_include_tip_commit_dates_for_local_and_remote_branches() {
+        let directory = repo();
+        let root = directory.path();
+        assert!(snapshot(root).unwrap().branches[0]
+            .last_commit_date
+            .is_none());
+        for (date, message) in [
+            ("2025-01-15T10:00:00+08:00", "old"),
+            ("2026-10-20T10:00:00+08:00", "recent"),
+        ] {
+            let mut process = command(Some(root));
+            process
+                .args(["commit", "--allow-empty", "-m", message])
+                .env("GIT_AUTHOR_DATE", date)
+                .env("GIT_COMMITTER_DATE", date);
+            let result =
+                crate::process::output_with_timeout(&mut process, Duration::from_secs(30)).unwrap();
+            assert!(result.status.success(), "{}", error_text(&result));
+            if message == "old" {
+                run(root, &["branch", "legacy"]).unwrap();
+                run(root, &["update-ref", "refs/remotes/origin/legacy", "HEAD"]).unwrap();
+            }
+        }
+        run(root, &["update-ref", "refs/remotes/origin/main", "HEAD"]).unwrap();
+        let state = snapshot(root).unwrap();
+        for name in ["legacy", "origin/legacy"] {
+            let branch = state
+                .branches
+                .iter()
+                .find(|branch| branch.name == name)
+                .unwrap();
+            assert!(branch
+                .last_commit_date
+                .as_deref()
+                .unwrap()
+                .starts_with("2025-01-15T10:00:00+08:00"));
+            assert_eq!(branch.remote, name.starts_with("origin/"));
+        }
+        assert_eq!(
+            state.branches[0].last_commit_date.as_deref(),
+            Some("2026-10-20T10:00:00+08:00")
+        );
+        assert!(
+            state
+                .branches
+                .iter()
+                .find(|branch| branch.name == "main")
+                .unwrap()
+                .current
+        );
     }
 
     #[test]

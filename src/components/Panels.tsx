@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconFile, IconFileCode, IconGitBranch, IconHistory, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconFile, IconFileCode, IconGitBranch, IconHistory, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTrash, IconX } from '@tabler/icons-react';
 import type { GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
 import './panels.css';
@@ -51,10 +51,7 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
 
 export { DiffPanel } from './diff/DiffPanel';
 
-export function BranchesPanel({ snapshot, busy, onCheckout }: { snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string) => void }) {
-  const branches = snapshot.branches.filter(b => !b.remote);
-  return <div className="branches-content"><div className="list-section-label">本地分支 <span>{branches.length}</span></div>{branches.map(branch => <button className={`branch-row ${branch.current ? 'current' : ''}`} key={branch.name} disabled={busy || branch.current} title={branch.current ? '当前分支' : `切换到 ${branch.name}`} onClick={() => onCheckout(branch.name)}><IconGitBranch size={16} /><span>{branch.name}</span>{branch.current ? <span className="current-badge">当前</span> : <IconArrowRight size={14} className="branch-arrow" />}</button>)}{!branches.length && <div className="empty-inline">首次提交后会显示本地分支。</div>}<div className="branch-bottom"><span className="tiny-dot" />{snapshot.remote ? `${snapshot.remote} · ${snapshot.ahead} 个待推送，${snapshot.behind} 个待拉取` : '尚未配置远程仓库'}</div></div>;
-}
+export { BranchesPanel } from './branches/BranchesPanel';
 
 export { CommitsPanel } from './commits/CommitsPanel';
 

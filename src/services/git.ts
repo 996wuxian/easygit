@@ -8,7 +8,7 @@ export interface GitFile {
   untracked: boolean;
   conflicted: boolean;
 }
-export interface GitBranch { name: string; current: boolean; remote: boolean }
+export interface GitBranch { name: string; current: boolean; remote: boolean; lastCommitDate: string | null }
 export interface GitCommitRef { name: string; remote: boolean }
 export type CommitAction = 'soft' | 'mixed' | 'revert';
 export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string; parents: string[]; refs: GitCommitRef[]; local: boolean; remote: boolean }
