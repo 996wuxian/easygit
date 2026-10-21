@@ -4,6 +4,7 @@ import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } 
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, ActivityPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
 import { Dialog } from './components/Dialog';
+import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { isDesktop, type GitCommit } from './services/git';
 import { useRepository, type RecentRepository } from './services/useRepository';
@@ -25,6 +26,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
   const [activeNav, setActiveNav] = useState('workspace');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
+  const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all' } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
   const workspaces = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
     ? [{ name: snapshot.name, path: snapshot.path }, ...repo.recents] : repo.recents;
@@ -53,6 +55,15 @@ export default function App({ onReady }: { onReady: () => void }) {
       setActiveNav('workspace');
     }
     cancelRemoval();
+  }
+  function requestDiscard(files: string[], scope: 'file' | 'all') {
+    if (busy || !files.length) return;
+    const selectedFiles = [...files];
+    setDiscardConfirmation({ files: selectedFiles, untrackedFiles: snapshot.files.filter(file => selectedFiles.includes(file.path) && file.untracked).map(file => file.path), scope });
+  }
+  async function confirmDiscard() {
+    if (!discardConfirmation) return;
+    if (await repo.discard(discardConfirmation.files)) setDiscardConfirmation(null);
   }
 
   useEffect(() => {
@@ -88,7 +99,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
-      if (removal) {
+      if (removal || discardConfirmation) {
         if ((event.ctrlKey || event.metaKey) && ['k', 'o', 'r'].includes(event.key.toLowerCase())) event.preventDefault();
         return;
       }
@@ -99,7 +110,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     };
     window.addEventListener('keydown', shortcuts);
     return () => window.removeEventListener('keydown', shortcuts);
-  }, [modal, removal, repo.refresh]);
+  }, [modal, removal, discardConfirmation, repo.refresh]);
 
   const actions = useMemo(() => [
     { id: 'open', icon: IconFolderOpen, title: '打开本地仓库', detail: '输入 Git 项目目录', shortcut: 'Ctrl O', run: () => setModal('open') },
@@ -114,7 +125,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const changedCount = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged).length;
   const renderPanel = (id: PanelId) => {
     switch (id) {
-      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onCommit={repo.commit} />;
+      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} notify={notify} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
       case 'commits': return <CommitsPanel snapshot={snapshot} onSelect={setSelectedCommit} />;
@@ -199,6 +210,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconGitCommit size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
 
     {removal && <RemoveWorkspaceDialog workspace={removal.workspace} busy={busy} onCancel={cancelRemoval} onConfirm={confirmRemoval} />}
+    {discardConfirmation && <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => setDiscardConfirmation(null)} onConfirm={() => { void confirmDiscard(); }} />}
     {repo.notice && <div className={`toast ${repo.notice.error ? 'error' : ''}`} role={repo.notice.error ? 'alert' : 'status'}>{repo.notice.error ? <IconX size={17} /> : <IconCheck size={17} />}<span>{repo.notice.message}</span><button aria-label="关闭提示" onClick={() => repo.setNotice(null)}><IconX size={14} /></button></div>}
   </div>;
 }

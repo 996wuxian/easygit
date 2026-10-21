@@ -113,6 +113,7 @@ export function useRepository(onReady: () => void) {
 
   const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths));
   const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths));
+  const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回全部未暂存更改', path => git.discard(path, paths));
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
   const fetch = () => run('远程引用已更新', path => git.fetch(path));
@@ -135,5 +136,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, commit, checkout, fetch, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, checkout, fetch, removeWorkspace };
 }

@@ -43,6 +43,11 @@ async fn unstage_files(path: String, files: Vec<String>) -> Result<RepositorySna
 }
 
 #[tauri::command]
+async fn discard_changes(path: String, files: Vec<String>) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::discard_changes(&path, &files)).await
+}
+
+#[tauri::command]
 async fn create_commit(path: String, message: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::create_commit(&path, &message)).await
 }
@@ -66,6 +71,7 @@ pub fn run() {
             read_diff,
             stage_files,
             unstage_files,
+            discard_changes,
             create_commit,
             checkout_branch,
             fetch_repository

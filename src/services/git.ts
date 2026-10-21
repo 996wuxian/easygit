@@ -43,6 +43,7 @@ export const git = {
   diff: (path: string, file: string, staged: boolean) => call<string>('read_diff', { path, file, staged }),
   stage: (path: string, files: string[]) => call<RepositorySnapshot>('stage_files', { path, files }),
   unstage: (path: string, files: string[]) => call<RepositorySnapshot>('unstage_files', { path, files }),
+  discard: (path: string, files: string[]) => call<RepositorySnapshot>('discard_changes', { path, files }),
   commit: (path: string, message: string) => call<RepositorySnapshot>('create_commit', { path, message }),
   checkout: (path: string, branch: string) => call<RepositorySnapshot>('checkout_branch', { path, branch }),
   fetch: (path: string) => call<RepositorySnapshot>('fetch_repository', { path }),

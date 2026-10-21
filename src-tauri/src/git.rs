@@ -457,6 +457,48 @@ pub fn unstage_files(path: &str, files: &[String]) -> Result<RepositorySnapshot,
     })
 }
 
+pub fn discard_changes(path: &str, files: &[String]) -> Result<RepositorySnapshot, String> {
+    validate_files(files)?;
+    with_repository(path, |root| {
+        let status = parse_status(&run(
+            root,
+            &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        )?)?;
+        let mut tracked = Vec::new();
+        let mut untracked = Vec::new();
+
+        for file in files {
+            let entry = status
+                .iter()
+                .find(|entry| entry.path == *file)
+                .ok_or_else(|| format!("{file} 已没有未暂存更改，请刷新后重试。"))?;
+            if entry.conflicted {
+                return Err(format!("{file} 存在合并冲突，请先解决冲突后再撤回。"));
+            }
+            if !entry.unstaged && !entry.untracked {
+                return Err(format!("{file} 已没有未暂存更改，请刷新后重试。"));
+            }
+            if entry.untracked {
+                untracked.push(file.as_str());
+            } else if entry.unstaged {
+                tracked.push(file.as_str());
+            }
+        }
+
+        if !tracked.is_empty() {
+            let mut args = vec!["restore", "--worktree", "--"];
+            args.extend(tracked);
+            run(root, &args)?;
+        }
+        if !untracked.is_empty() {
+            let mut args = vec!["clean", "-f", "--"];
+            args.extend(untracked);
+            run(root, &args)?;
+        }
+        snapshot(root)
+    })
+}
+
 pub fn create_commit(path: &str, message: &str) -> Result<RepositorySnapshot, String> {
     if message.trim().is_empty() {
         return Err("请输入提交信息。".to_owned());
@@ -590,6 +632,77 @@ mod tests {
         assert_eq!(
             fs::read_to_string(directory.path().join(filename)).unwrap(),
             "new working content\n"
+        );
+    }
+
+    #[test]
+    fn discarding_worktree_changes_keeps_staged_contents() {
+        let directory = repo();
+        let path = directory.path().to_str().unwrap();
+        let filename = "tracked.txt";
+        fs::write(directory.path().join(filename), "base\n").unwrap();
+        stage_files(path, &[filename.to_owned()]).unwrap();
+        create_commit(path, "initial").unwrap();
+        fs::write(directory.path().join(filename), "staged contents\n").unwrap();
+        stage_files(path, &[filename.to_owned()]).unwrap();
+        fs::write(directory.path().join(filename), "unstaged contents\n").unwrap();
+
+        let restored = discard_changes(path, &[filename.to_owned()]).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(directory.path().join(filename)).unwrap(),
+            "staged contents\n"
+        );
+        assert_eq!(restored.files.len(), 1);
+        assert!(restored.files[0].staged);
+        assert!(!restored.files[0].unstaged);
+        assert!(read_diff(path, filename, true)
+            .unwrap()
+            .contains("+staged contents"));
+        assert!(read_diff(path, filename, false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn discarding_untracked_file_removes_only_that_file() {
+        let directory = repo();
+        let path = directory.path().to_str().unwrap();
+        fs::write(directory.path().join("remove.txt"), "remove me\n").unwrap();
+        fs::write(directory.path().join("keep.txt"), "keep me\n").unwrap();
+
+        let restored = discard_changes(path, &["remove.txt".to_owned()]).unwrap();
+
+        assert!(!directory.path().join("remove.txt").exists());
+        assert!(directory.path().join("keep.txt").exists());
+        assert_eq!(restored.files.len(), 1);
+        assert_eq!(restored.files[0].path, "keep.txt");
+    }
+
+    #[test]
+    fn bulk_discard_rejects_conflicts_before_restoring_any_file() {
+        let directory = repo();
+        let path = directory.path().to_str().unwrap();
+        fs::write(directory.path().join("conflict.txt"), "base\n").unwrap();
+        fs::write(directory.path().join("other.txt"), "base\n").unwrap();
+        stage_files(path, &["conflict.txt".to_owned(), "other.txt".to_owned()]).unwrap();
+        create_commit(path, "initial").unwrap();
+        run(directory.path(), &["branch", "feature"]).unwrap();
+        fs::write(directory.path().join("conflict.txt"), "main change\n").unwrap();
+        stage_files(path, &["conflict.txt".to_owned()]).unwrap();
+        create_commit(path, "main change").unwrap();
+        run(directory.path(), &["switch", "feature"]).unwrap();
+        fs::write(directory.path().join("conflict.txt"), "feature change\n").unwrap();
+        stage_files(path, &["conflict.txt".to_owned()]).unwrap();
+        create_commit(path, "feature change").unwrap();
+        run(directory.path(), &["switch", "main"]).unwrap();
+        assert!(run(directory.path(), &["merge", "feature"]).is_err());
+        fs::write(directory.path().join("other.txt"), "keep this change\n").unwrap();
+
+        let result = discard_changes(path, &["other.txt".to_owned(), "conflict.txt".to_owned()]);
+
+        assert!(result.unwrap_err().contains("合并冲突"));
+        assert_eq!(
+            fs::read_to_string(directory.path().join("other.txt")).unwrap(),
+            "keep this change\n"
         );
     }
 

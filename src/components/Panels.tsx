@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { IconArrowDown, IconArrowRight, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconCopy, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconStack2, IconTextWrap, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowRight, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconCopy, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconStack2, IconTextWrap, IconTrash, IconX } from '@tabler/icons-react';
 import type { GitCommit, GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
 import { git } from '../services/git';
 import './panels.css';
 
-export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onCommit, busy }: {
+export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onCommit, busy }: {
   message: string; onMessageChange: (message: string) => void;
   snapshot: RepositorySnapshot; selected: string | null; onSelect: (path: string, staged: boolean) => void;
-  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onCommit: (message: string) => Promise<boolean>; busy: boolean;
+  onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onCommit: (message: string) => Promise<boolean>; busy: boolean;
 }) {
   const [filter, setFilter] = useState('');
   const pending = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged);
@@ -24,13 +24,14 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
         <span className="file-label"><strong>{name}</strong><small>{directory || '仓库根目录'}</small></span>
         <span className={`file-status ${f.untracked ? 'new' : f.conflicted ? 'conflict' : ''}`}>{f.conflicted ? '!' : f.untracked ? 'U' : f.indexStatus === 'A' ? 'A' : f.indexStatus === 'D' || f.worktreeStatus === 'D' ? 'D' : 'M'}</span>
       </button>
+      {!isStaged && <button className="file-action icon-button discard-file-action" title={f.conflicted ? '冲突文件暂时无法撤回' : '撤回更改'} aria-label={`撤回更改 ${f.path}`} disabled={busy || f.conflicted} onClick={() => onDiscard([f.path], 'file')}><IconTrash size={15} /></button>}
       <button className="file-action icon-button" title={isStaged ? '取消暂存' : f.conflicted ? '请先在编辑器中解决冲突并暂存' : '暂存文件'} aria-label={`${isStaged ? '取消暂存' : f.conflicted ? '标记已解决' : '暂存'} ${f.path}`} disabled={busy || f.conflicted} onClick={() => isStaged ? onUnstage([f.path]) : onStage([f.path])}>{isStaged ? <IconMinus size={16} /> : <IconPlus size={16} />}</button>
     </div>;
   }
   return <div className="changes-content">
     <label className="file-filter"><IconSearch size={15} /><input aria-label="筛选变更文件" placeholder="筛选文件…" value={filter} onChange={e => setFilter(e.target.value)} /><kbd>/</kbd></label>
     <div className="file-groups">
-      <div className="file-group-label"><span><IconChevronRight size={12} />未暂存 <b>{pending.length}</b></span><button title="暂存全部非冲突文件" aria-label="暂存全部文件" disabled={!pending.some(f => !f.conflicted) || busy} onClick={() => onStage(pending.filter(f => !f.conflicted).map(f => f.path))}><IconPlus size={14} />全部暂存</button></div>
+      <div className="file-group-label"><span><IconChevronRight size={12} />未暂存 <b>{pending.length}</b></span><div className="file-group-actions"><button className="discard-all-action" title={pending.some(f => f.conflicted) ? '请先解决冲突文件' : `撤回全部未暂存更改（${pending.length} 个文件）`} aria-label="全部撤回" disabled={!pending.length || pending.some(f => f.conflicted) || busy} onClick={() => onDiscard(pending.map(f => f.path), 'all')}><IconTrash size={13} />全部撤回</button><button title="暂存全部非冲突文件" aria-label="暂存全部文件" disabled={!pending.some(f => !f.conflicted) || busy} onClick={() => onStage(pending.filter(f => !f.conflicted).map(f => f.path))}><IconPlus size={14} />全部暂存</button></div></div>
       {pending.filter(matches).map(f => row(f, false))}
       <div className="file-group-label staged-label"><span><IconChevronRight size={12} />已暂存 <b>{staged.length}</b></span><button title="取消全部暂存" aria-label="取消全部暂存" disabled={!staged.length || busy} onClick={() => onUnstage(staged.map(f => f.path))}><IconMinus size={14} />取消暂存</button></div>
       {staged.filter(matches).map(f => row(f, true))}

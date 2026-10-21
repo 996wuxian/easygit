@@ -36,6 +36,16 @@
 .remove-workspace-note { margin: 17px 0 24px; color: var(--text-muted); font-size: 12px; line-height: 1.9; }
 .remove-workspace-actions { display: flex; justify-content: flex-end; gap: 9px; }
 .remove-workspace-confirm { color: #fff; background: #a74b4b; border-color: #a74b4b; }
+.discard-changes-dialog { width: 520px; }
+.discard-changes-warning { display: flex; align-items: flex-start; gap: 10px; color: var(--danger); }
+.discard-changes-warning > svg { flex-shrink: 0; margin-top: 1px; }
+.discard-changes-warning p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.discard-changes-list { display: grid; gap: 6px; max-height: 180px; overflow: auto; margin-top: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); }
+.discard-changes-list code { color: var(--text-muted); font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+.discard-changes-note { margin: 15px 0 21px; color: var(--text-muted); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.discard-changes-note code { color: var(--text); font: 10px var(--mono); }
+.discard-confirm-button { color: #fff; background: #a74b4b; border-color: #a74b4b; }
+.discard-confirm-button:not(:disabled):hover { background: #923f3f; border-color: #923f3f; }
 .layout-options { display: grid; gap: 8px; }
 .layout-options > label { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); padding: 12px; border-radius: 8px; cursor: pointer; }
 .layout-options > label.checked { border-color: #16826c35; background: var(--primary-soft); }
