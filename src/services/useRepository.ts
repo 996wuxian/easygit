@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type RepositorySnapshot } from './git';
+import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot } from './git';
 import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
@@ -224,6 +224,28 @@ export function useRepository(onReady: () => void) {
     });
   };
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
+  const merge = useCallback(async (preview: MergePreview) => {
+    if (busyRef.current || !snapshotRef.current.path) return false;
+    busyRef.current = true;
+    setBusy(true);
+    const token = ++generation.current;
+    try {
+      const result = await git.mergeBranches(snapshotRef.current.path, preview.source, preview.target, preview.sourceHead, preview.targetHead);
+      if (token !== generation.current) return false;
+      snapshotRef.current = result.snapshot;
+      setSnapshot(result.snapshot);
+      if (result.merged) notify(`已将 ${preview.source} 合并到 ${preview.target}`);
+      else if (result.conflicted) notify(`合并遇到冲突，请在文件更改面板中解决${result.error ? `：${result.error}` : '。'}`, true);
+      else notify(result.error || '合并失败。', true);
+      return result.merged || result.conflicted;
+    } catch (error) {
+      notify(String(error), true);
+      return false;
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [notify]);
   const removeWorkspace = useCallback((workspace: RecentRepository) => {
     if (busyRef.current) return false;
     if (snapshotRef.current.path === workspace.path) {
@@ -247,5 +269,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, merge, removeWorkspace };
 }

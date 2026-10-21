@@ -8,9 +8,10 @@ import { Dialog } from './components/Dialog';
 import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import { ConflictResolutionDialog } from './components/diff/ConflictResolutionDialog';
 import { DiscardBlockDialog } from './components/diff/DiscardBlockDialog';
+import { BranchMergeDialog } from './components/branches/BranchMergeDialog';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
-import { git, isDesktop, type DiffBlock, type GitCommit } from './services/git';
+import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } from './services/git';
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { CommitRefs } from './components/commits/CommitsPanel';
 import { commitStatus } from './components/commits/model';
@@ -60,6 +61,11 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [query, setQuery] = useState('');
   const [commitDrafts, setCommitDrafts] = useState(readCommitDrafts);
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
+  const [commitDetailStatus, setCommitDetailStatus] = useState<string | null>(null);
+  const [commitFiles, setCommitFiles] = useState<string[] | null>(null);
+  const [commitFilesError, setCommitFilesError] = useState<string | null>(null);
+  const [commitFilesLoading, setCommitFilesLoading] = useState(false);
+  const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string } | null>(null);
   const [activeNav, setActiveNav] = useState('workspace');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
   const [repositoryTooltip, setRepositoryTooltip] = useState<{ name: string; path: string; left: number; top: number } | null>(null);
@@ -74,6 +80,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [conflictFile, setConflictFile] = useState<string | null>(null);
   const [blockDiscard, setBlockDiscard] = useState<{ file: string; block: DiffBlock } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
+  const requestBranchMerge = (source: string, target: string) => { setModal(null); setMergeRequest({ source, target }); };
   const workspaces = useMemo(() => {
     const available = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
       ? [{ name: snapshot.name, path: snapshot.path }, ...repo.recents] : repo.recents;
@@ -141,6 +148,27 @@ export default function App({ onReady }: { onReady: () => void }) {
       return next;
     });
   }, [workspaces]);
+
+  useEffect(() => {
+    if (!selectedCommit || !snapshot.path) {
+      setCommitFiles(null);
+      setCommitFilesError(null);
+      setCommitFilesLoading(false);
+      return;
+    }
+    let active = true;
+    setCommitFiles(null);
+    setCommitFilesError(null);
+    setCommitFilesLoading(true);
+    void git.commitFiles(snapshot.path, selectedCommit.hash).then(files => {
+      if (active) setCommitFiles(files);
+    }).catch(error => {
+      if (active) setCommitFilesError(String(error));
+    }).finally(() => {
+      if (active) setCommitFilesLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedCommit?.hash, snapshot.path]);
 
   useEffect(() => {
     updateRepositoryScroll();
@@ -354,14 +382,15 @@ export default function App({ onReady }: { onReady: () => void }) {
   }
   const stagedCount = snapshot.files.filter(f => f.staged).length;
   const changedCount = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged).length;
+  const mergeDisabled = busy || syncing || Boolean(snapshot.operation);
   const canPush = Boolean(snapshot.remote && snapshot.head && !snapshot.branch.startsWith('detached@') && (!snapshot.hasUpstream || snapshot.ahead > 0));
   const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : snapshot.hasUpstream ? `推送当前分支（${snapshot.ahead} 个待推送提交）` : '首次推送并设置上游分支';
   const renderPanel = (id: PanelId) => {
     switch (id) {
       case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onResolveConflict={setConflictFile} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} busy={busy} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope, true)} onResolveConflict={setConflictFile} onDiscardBlock={requestBlockDiscard} />;
-      case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
-      case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={setSelectedCommit} busy={busy} notify={notify} onAction={async (commit, head, branch, action) => {
+      case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} mergeDisabled={mergeDisabled} onMergeRequest={requestBranchMerge} onCheckout={name => { void repo.checkout(name); }} />;
+      case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={commit => { setCommitDetailStatus(null); setSelectedCommit(commit); }} busy={busy} notify={notify} onAction={async (commit, head, branch, action) => {
         const path = snapshot.path;
         const success = await repo.actOnCommit(commit.hash, head, branch, action);
         if (success && action !== 'revert') setCommitDrafts(current => ({ ...current, [path]: commit.subject }));
@@ -452,7 +481,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'commands' && <Dialog title="命令面板" className="command-dialog" onClose={closeModal}><label className="command-search"><IconSearch size={21} /><input aria-label="搜索命令" placeholder="搜索命令…" value={query} onChange={e => setQuery(e.target.value)} autoFocus onKeyDown={e => { if (e.key === 'Enter') actions.find(action => `${action.title}${action.detail}`.includes(query))?.run(); }} /><kbd>ESC</kbd></label><div className="dialog-section-label">快捷操作</div><div className="command-list">{actions.filter(action => `${action.title}${action.detail}`.includes(query)).map(action => <button key={action.id} onClick={action.run}><span className="command-icon"><action.icon size={19} /></span><span><strong>{action.title}</strong><small>{action.detail}</small></span>{action.shortcut && <kbd>{action.shortcut}</kbd>}<IconChevronRight size={14} /></button>)}{!actions.some(action => `${action.title}${action.detail}`.includes(query)) && <div className="empty-inline">没有找到对应命令，试试“布局”或“分支”。</div>}</div><div className="command-footer"><span><kbd>↵</kbd> 执行首个结果</span><span>Ctrl K 打开 / 关闭</span></div></Dialog>}
 
-    {modal === 'branches' && <Dialog title="切换分支" onClose={closeModal}><p className="dialog-description">当前分支：<code>{snapshot.branch}</code></p><BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name).then(ok => { if (ok) closeModal(); }); }} /></Dialog>}
+    {modal === 'branches' && <Dialog title="切换分支" onClose={closeModal}><p className="dialog-description">当前分支：<code>{snapshot.branch}</code></p><BranchesPanel snapshot={snapshot} busy={busy} mergeDisabled={mergeDisabled} onMergeRequest={requestBranchMerge} onCheckout={name => { void repo.checkout(name).then(ok => { if (ok) closeModal(); }); }} /></Dialog>}
 
     {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}>
       <div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div>
@@ -478,7 +507,9 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
 
-    {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconHistory size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><CommitRefs commit={selectedCommit} /><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><p>{commitStatus(selectedCommit, snapshot.hasUpstream).label}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
+    {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.source}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} target={mergeRequest.target} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
+
+    {selectedCommit && <Dialog title="提交详情" onClose={() => { setSelectedCommit(null); setCommitDetailStatus(null); }}><div className="commit-detail"><div className="commit-detail-heading"><IconHistory size={22} stroke={1.6} /><h3 title={selectedCommit.subject}>{selectedCommit.subject}</h3></div>{selectedCommit.refs.length > 0 && <CommitRefs commit={selectedCommit} />}<p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><p>{commitDetailStatus ?? commitStatus(selectedCommit, snapshot.hasUpstream).label}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div><label className="field-label commit-files-label">提交涉及的文件</label>{commitFilesLoading ? <div className="commit-files-state"><IconLoader2 size={15} className="spin" />正在读取文件列表…</div> : commitFilesError ? <div className="commit-files-state error">{commitFilesError}</div> : <div className="commit-files-list">{commitFiles?.length ? commitFiles.map(file => <code key={file} title={file}>{file}</code>) : <span>此提交没有文件差异。</span>}</div>}</div></Dialog>}
 
     {removal && <RemoveWorkspaceDialog workspace={removal.workspace} busy={busy} onCancel={cancelRemoval} onConfirm={confirmRemoval} />}
     {discardConfirmation && (discardConfirmation.overlay ? createPortal(<DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />, document.body) : <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />)}

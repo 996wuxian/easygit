@@ -1,6 +1,7 @@
 .branches-content { height: 100%; min-height: 0; overflow-y: auto; padding: 12px 12px 0; }
 .branch-filter-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 6px 12px; color: var(--text-muted); font-size: 10px; }
 .branch-filter-note > span { color: var(--text-dim); }
+.branch-merge-hint { display: flex; align-items: center; gap: 6px; margin: -4px 6px 10px; color: var(--text-dim); font-size: 10px; }
 .branch-current-note { display: flex; align-items: center; gap: 5px; margin: 0 6px 10px; color: var(--text-muted); font-size: 10px; }
 .branch-current-note > code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--mono); }
 .branch-current-note > span { margin-left: auto; flex-shrink: 0; color: var(--text-dim); }
@@ -13,6 +14,11 @@
 .branch-row.current { color: var(--text); background: var(--bg-soft); opacity: 1; }
 .branch-row.current > svg { color: var(--primary); }
 button.branch-row:not(:disabled):hover { background: var(--bg-soft); color: var(--text); }
+button.branch-row[aria-disabled="true"] { cursor: default; }
+button.branch-row[draggable="true"] { cursor: grab; }
+button.branch-row.merge-source { opacity: .5; }
+button.branch-row.merge-target { outline: 1px dashed var(--primary); outline-offset: -2px; color: var(--primary); background: var(--primary-soft); }
+button.branch-row.merge-target > svg { color: var(--primary); }
 .current-badge { flex-shrink: 0; font-size: 9px; color: var(--primary); padding: 2px 5px; border-radius: 4px; background: var(--primary-soft); }
 .branch-arrow { opacity: 0; }
 .branch-row:hover .branch-arrow { opacity: 1; }
