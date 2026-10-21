@@ -41,6 +41,7 @@
 .eg-panel-heading > svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--text-muted, #787a80); }
 .eg-panel-heading h2 { margin: 0; color: var(--text, #202124); font-size: 13px; font-weight: 550; line-height: 1.4; white-space: nowrap; }
 .eg-panel-header-actions { flex-shrink: 0; gap: 5px; }
+.panel-pull-button { margin-right: 5px; }
 .eg-panel-content { flex: 1 1 auto; min-width: 0; min-height: 0; }
 .eg-panel-drag-handle {
   display: inline-flex;

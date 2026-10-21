@@ -222,8 +222,18 @@ async fn checkout_branch(path: String, branch: String) -> Result<RepositorySnaps
 }
 
 #[tauri::command]
+async fn create_branch(path: String, branch: String) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::create_branch(&path, &branch)).await
+}
+
+#[tauri::command]
 async fn fetch_repository(path: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::fetch_repository(&path)).await
+}
+
+#[tauri::command]
+async fn pull_repository(path: String) -> Result<git::PullResult, String> {
+    blocking(move || git::pull_repository(&path)).await
 }
 
 #[tauri::command]
@@ -260,7 +270,9 @@ pub fn run() {
             create_commit,
             act_on_commit,
             checkout_branch,
+            create_branch,
             fetch_repository,
+            pull_repository,
             push_repository
         ])
         .run(tauri::generate_context!())

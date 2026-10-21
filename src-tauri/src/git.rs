@@ -96,6 +96,14 @@ pub struct RepositorySnapshot {
     pub operation: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullResult {
+    pub snapshot: RepositorySnapshot,
+    pub conflicted: bool,
+    pub error: Option<String>,
+}
+
 type RepoLocks = Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>;
 static REPO_LOCKS: OnceLock<RepoLocks> = OnceLock::new();
 
@@ -635,6 +643,22 @@ pub fn checkout_branch(path: &str, branch: &str) -> Result<RepositorySnapshot, S
     })
 }
 
+pub fn create_branch(path: &str, branch: &str) -> Result<RepositorySnapshot, String> {
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return Err("请输入新分支名称。".to_owned());
+    }
+    with_repository(path, |root| {
+        run(root, &["check-ref-format", "--branch", branch])?;
+        let current = snapshot(root)?;
+        if current.operation.is_some() || current.files.iter().any(|file| file.conflicted) {
+            return Err("请先完成当前 Git 操作和冲突处理，再创建分支。".to_owned());
+        }
+        run(root, &["switch", "-c", branch])?;
+        snapshot(root)
+    })
+}
+
 pub fn fetch_repository(path: &str) -> Result<RepositorySnapshot, String> {
     with_repository(path, |root| {
         let remotes = run_text(root, &["remote"])?;
@@ -643,6 +667,40 @@ pub fn fetch_repository(path: &str) -> Result<RepositorySnapshot, String> {
         }
         run(root, &["fetch", "--all", "--prune"])?;
         snapshot(root)
+    })
+}
+
+pub fn pull_repository(path: &str) -> Result<PullResult, String> {
+    with_repository(path, |root| {
+        let current = snapshot(root)?;
+        if current.operation.is_some() || current.files.iter().any(|file| file.conflicted) {
+            return Err("请先完成当前 Git 操作和冲突处理，再拉取更新。".to_owned());
+        }
+        if current.branch.starts_with("detached@") {
+            return Err("游离 HEAD 状态无法拉取，请先切换到本地分支。".to_owned());
+        }
+        if !current.has_upstream {
+            return Err("当前分支尚未设置上游分支，无法拉取更新。".to_owned());
+        }
+
+        let result = output(Some(root), &["pull", "--no-rebase", "--no-edit"])?;
+        if result.status.success() {
+            return Ok(PullResult {
+                snapshot: snapshot(root)?,
+                conflicted: false,
+                error: None,
+            });
+        }
+
+        let message = error_text(&result);
+        let state = snapshot(root)?;
+        let conflicted = state.operation.as_deref() == Some("merge")
+            && state.files.iter().any(|file| file.conflicted);
+        Ok(PullResult {
+            snapshot: state,
+            conflicted,
+            error: (!conflicted).then_some(message),
+        })
     })
 }
 

@@ -29,6 +29,7 @@ export interface RepositorySnapshot {
   behind: number;
   operation: string | null;
 }
+export interface PullResult { snapshot: RepositorySnapshot; conflicted: boolean; error: string | null }
 export interface BootstrapResult { gitAvailable: boolean; gitVersion: string | null; error: string | null }
 export type ConflictResolution = 'content' | 'ours' | 'theirs' | 'working' | 'delete';
 export interface ConflictFile {
@@ -75,6 +76,8 @@ export const git = {
   commit: (path: string, message: string) => invokeCommand<RepositorySnapshot>('create_commit', { path, message }),
   actOnCommit: (path: string, commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => invokeCommand<RepositorySnapshot>('act_on_commit', { path, commit, expectedHead, expectedBranch, action }),
   checkout: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch }),
+  createBranch: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('create_branch', { path, branch }),
   fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
+  pull: (path: string) => invokeCommand<PullResult>('pull_repository', { path }),
   push: (path: string) => invokeCommand<RepositorySnapshot>('push_repository', { path }),
 };

@@ -179,7 +179,7 @@ export function useRepository(onReady: () => void) {
     return () => { clearInterval(id); window.removeEventListener('focus', focus); };
   }, [hasRepository, refresh]);
 
-  const run = useCallback(async (label: string, operation: (path: string) => Promise<RepositorySnapshot>) => {
+  const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
     busyRef.current = true;
     setBusy(true);
@@ -190,7 +190,8 @@ export function useRepository(onReady: () => void) {
       if (token !== generation.current) return false;
       snapshotRef.current = next;
       setSnapshot(next);
-      notify(label);
+      const result = typeof label === 'string' ? { message: label } : label(next);
+      notify(result.message, result.error ?? false);
       return true;
     } catch (error) { notify(String(error), true); return false; }
     finally { busyRef.current = false; setBusy(false); }
@@ -204,6 +205,24 @@ export function useRepository(onReady: () => void) {
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
+  const createBranch = (branch: string) => {
+    const base = snapshotRef.current.branch || '当前提交';
+    return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch));
+  };
+  const pull = () => {
+    let conflicted = false;
+    let pullError: string | null = null;
+    return run(next => pullError
+      ? { message: conflicted ? '拉取遇到冲突，请在工作区变更中解决冲突并提交完成合并' : `拉取失败：${pullError}`, error: true }
+      : conflicted || next.operation === 'merge' || next.files.some(file => file.conflicted)
+        ? { message: '拉取遇到冲突，请在工作区变更中解决冲突并提交完成合并', error: true }
+        : { message: '拉取更新完成' }, async path => {
+      const result = await git.pull(path);
+      conflicted = result.conflicted;
+      pullError = result.error;
+      return result.snapshot;
+    });
+  };
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
   const removeWorkspace = useCallback((workspace: RecentRepository) => {
     if (busyRef.current) return false;
@@ -228,5 +247,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, removeWorkspace };
 }

@@ -95,7 +95,10 @@ describe('项目远程状态展示', () => {
     const local = { ...snapshot, hasUpstream: true, upstream: { name: 'origin/main', hash: 'abc123' }, commits: [localCommit], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date }] };
     vi.mocked(git.open).mockResolvedValue(local);
     await openWorkspace();
-    const button = host.querySelector<HTMLButtonElement>('[aria-label="获取远程更新"]')!;
+    const button = host.querySelector<HTMLButtonElement>('[data-eg-panel="branches"] [aria-label="获取远程更新"]')!;
+    expect(button.closest('.workspace-section-heading')).toBeNull();
+    expect(button.nextElementSibling?.classList.contains('eg-panel-drag-handle')).toBe(true);
+    expect(button.classList.contains('panel-fetch-button')).toBe(true);
     const history = host.querySelector('.history-row');
     expect(history?.textContent).toContain('Local history');
     expect(button.textContent).toBe('正在获取');
