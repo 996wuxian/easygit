@@ -290,7 +290,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     if (!repo.notice) return;
-    const timeout = window.setTimeout(() => repo.setNotice(null), repo.notice.error ? 8000 : 3500);
+    const timeout = window.setTimeout(() => repo.setNotice(null), repo.notice.error ? 20000 : 10000);
     return () => clearTimeout(timeout);
   }, [repo.notice, repo.setNotice]);
 

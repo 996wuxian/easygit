@@ -110,7 +110,7 @@
 .commit-detail p { color: var(--text-muted); font-size: 11px; margin-bottom: 25px; }
 .commit-hash { display: flex; align-items: center; gap: 8px; padding: 9px; background: var(--bg-soft); border-radius: 6px; border: 1px solid var(--border); }
 .commit-hash code { flex: 1; min-width: 0; font-size: 11px; word-break: break-all; }
-.toast { position: fixed; z-index: 2000; bottom: 28px; left: calc(50% + 70px); transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: min(600px, 80vw); background: var(--bg-card); color: var(--primary); border: 1px solid #16826c35; box-shadow: 0 8px 25px #17352514; padding: 12px 14px; border-radius: 9px; font-size: 11px; animation: fade-in .2s ease-out; }
+.toast { position: fixed; z-index: 2000; top: 64px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; max-width: min(600px, 80vw); background: var(--bg-card); color: var(--primary); border: 1px solid #16826c35; box-shadow: 0 8px 25px #17352514; padding: 12px 14px; border-radius: 9px; font-size: 11px; animation: fade-in .2s ease-out; }
 .toast > span { overflow-wrap: anywhere; max-height: 150px; overflow: auto; line-height: 1.7; }
 .toast > button { display: flex; padding: 3px; color: var(--text-muted); margin-left: 10px; }
 .toast.error { color: var(--danger); border-color: #c8616540; }
