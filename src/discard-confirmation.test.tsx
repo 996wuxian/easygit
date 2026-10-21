@@ -52,6 +52,30 @@ async function openWorkspace() {
 }
 
 describe('撤回未暂存更改', () => {
+  it('未暂存和已暂存文件组可独立折叠，数量和组操作仍保留', async () => {
+    await openWorkspace();
+    expect(host.querySelectorAll('.file-row')).toHaveLength(3);
+    const pendingToggle = host.querySelector<HTMLButtonElement>('[aria-label="折叠未暂存文件"]')!;
+    await act(async () => pendingToggle.click());
+    expect(host.querySelector<HTMLDivElement>('#unstaged-file-list')?.hidden).toBe(true);
+    expect(host.querySelectorAll('#staged-file-list .file-row')).toHaveLength(1);
+    expect(host.querySelector('[aria-label="全部撤回"]')).not.toBeNull();
+    const stagedToggle = host.querySelector<HTMLButtonElement>('[aria-label="折叠已暂存文件"]')!;
+    await act(async () => stagedToggle.click());
+    expect(host.querySelector<HTMLDivElement>('#staged-file-list')?.hidden).toBe(true);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开未暂存文件"]')!.click());
+    expect(host.querySelector<HTMLDivElement>('#unstaged-file-list')?.hidden).toBe(false);
+    expect(host.querySelector<HTMLDivElement>('#staged-file-list')?.hidden).toBe(true);
+    expect(host.querySelectorAll('#unstaged-file-list .file-row')).toHaveLength(2);
+  });
+
+  it('取消暂存图标和文字位于同一组水平对齐的操作按钮中', async () => {
+    await openWorkspace();
+    const unstage = host.querySelector<HTMLButtonElement>('[aria-label="取消全部暂存"]')!;
+    expect(unstage.parentElement?.classList.contains('file-group-actions')).toBe(true);
+    expect(unstage.querySelector('svg')).not.toBeNull();
+  });
+
   it('撤回按钮紧邻加号左侧，全部撤回位于全部暂存左侧', async () => {
     await openWorkspace();
     const row = Array.from(host.querySelectorAll('.file-row')).find(node => node.querySelector('[aria-label="撤回更改 src/modified.ts"]'))!;

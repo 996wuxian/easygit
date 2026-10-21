@@ -4,10 +4,13 @@
 .file-filter kbd { padding: 0 3px; font-size: 10px; color: var(--text-dim); }
 .file-groups { flex: 1; min-height: 80px; padding: 0 9px 8px; overflow-y: auto; }
 .file-group-label { display: flex; align-items: center; justify-content: space-between; padding: 8px 7px 6px; color: var(--text-muted); font-size: 11px; }
-.file-group-label > span { display: flex; align-items: center; gap: 3px; }
+.file-group-label > button, .file-group-actions > button { display: flex; align-items: center; gap: 3px; padding: 0; color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
+.file-group-label > .file-group-toggle { color: var(--text-muted); font-size: 11px; }
+.file-group-toggle > svg { transition: transform .15s ease; }
+.file-group-toggle[aria-expanded='true'] > svg { transform: rotate(90deg); }
+.file-group-toggle:not(:disabled):hover { color: var(--text); }
 .file-group-label b { margin-left: 5px; color: var(--text-dim); font-size: 10px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .file-group-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
-.file-group-actions > button { display: flex; align-items: center; gap: 3px; padding: 0; color: var(--text-muted); font-size: 10px; }
 .file-group-actions > button:not(:disabled):hover { color: var(--primary); }
 .file-group-actions > .discard-all-action:not(:disabled):hover, .discard-file-action:not(:disabled):hover { color: var(--danger); }
 .staged-label { margin-top: 7px; }

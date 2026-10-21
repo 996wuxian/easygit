@@ -11,6 +11,7 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
   onStage: (paths: string[]) => void; onUnstage: (paths: string[]) => void; onDiscard: (paths: string[], scope: 'file' | 'all') => void; onCommit: (message: string) => Promise<boolean>; busy: boolean;
 }) {
   const [filter, setFilter] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState({ pending: false, staged: false });
   const pending = snapshot.files.filter(f => f.unstaged || f.untracked && !f.staged);
   const staged = snapshot.files.filter(f => f.staged);
   const matches = (f: GitFile) => f.path.toLowerCase().includes(filter.toLowerCase());
@@ -31,10 +32,10 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
   return <div className="changes-content">
     <label className="file-filter"><IconSearch size={15} /><input aria-label="筛选变更文件" placeholder="筛选文件…" value={filter} onChange={e => setFilter(e.target.value)} /><kbd>/</kbd></label>
     <div className="file-groups">
-      <div className="file-group-label"><span><IconChevronRight size={12} />未暂存 <b>{pending.length}</b></span><div className="file-group-actions"><button className="discard-all-action" title={pending.some(f => f.conflicted) ? '请先解决冲突文件' : `撤回全部未暂存更改（${pending.length} 个文件）`} aria-label="全部撤回" disabled={!pending.length || pending.some(f => f.conflicted) || busy} onClick={() => onDiscard(pending.map(f => f.path), 'all')}><IconTrash size={13} />全部撤回</button><button title="暂存全部非冲突文件" aria-label="暂存全部文件" disabled={!pending.some(f => !f.conflicted) || busy} onClick={() => onStage(pending.filter(f => !f.conflicted).map(f => f.path))}><IconPlus size={14} />全部暂存</button></div></div>
-      {pending.filter(matches).map(f => row(f, false))}
-      <div className="file-group-label staged-label"><span><IconChevronRight size={12} />已暂存 <b>{staged.length}</b></span><button title="取消全部暂存" aria-label="取消全部暂存" disabled={!staged.length || busy} onClick={() => onUnstage(staged.map(f => f.path))}><IconMinus size={14} />取消暂存</button></div>
-      {staged.filter(matches).map(f => row(f, true))}
+      <div className="file-group-label"><button className="file-group-toggle" aria-label={`${collapsedGroups.pending ? '展开' : '折叠'}未暂存文件`} aria-expanded={!collapsedGroups.pending} aria-controls="unstaged-file-list" onClick={() => setCollapsedGroups(current => ({ ...current, pending: !current.pending }))}><IconChevronRight size={12} /><span>未暂存</span><b>{pending.length}</b></button><div className="file-group-actions"><button className="discard-all-action" title={pending.some(f => f.conflicted) ? '请先解决冲突文件' : `撤回全部未暂存更改（${pending.length} 个文件）`} aria-label="全部撤回" disabled={!pending.length || pending.some(f => f.conflicted) || busy} onClick={() => onDiscard(pending.map(f => f.path), 'all')}><IconTrash size={13} />全部撤回</button><button title="暂存全部非冲突文件" aria-label="暂存全部文件" disabled={!pending.some(f => !f.conflicted) || busy} onClick={() => onStage(pending.filter(f => !f.conflicted).map(f => f.path))}><IconPlus size={14} />全部暂存</button></div></div>
+      <div id="unstaged-file-list" hidden={collapsedGroups.pending}>{pending.filter(matches).map(f => row(f, false))}</div>
+      <div className="file-group-label staged-label"><button className="file-group-toggle" aria-label={`${collapsedGroups.staged ? '展开' : '折叠'}已暂存文件`} aria-expanded={!collapsedGroups.staged} aria-controls="staged-file-list" onClick={() => setCollapsedGroups(current => ({ ...current, staged: !current.staged }))}><IconChevronRight size={12} /><span>已暂存</span><b>{staged.length}</b></button><div className="file-group-actions"><button title="取消全部暂存" aria-label="取消全部暂存" disabled={!staged.length || busy} onClick={() => onUnstage(staged.map(f => f.path))}><IconMinus size={14} />取消暂存</button></div></div>
+      <div id="staged-file-list" hidden={collapsedGroups.staged}>{staged.filter(matches).map(f => row(f, true))}</div>
       {!snapshot.files.length && <div className="clean-state"><IconCircleCheck size={28} stroke={1.3} /><strong>工作区干净</strong><span>没有未提交的更改</span></div>}
       {filter && !snapshot.files.some(matches) && <div className="empty-inline">没有匹配的文件</div>}
     </div>
