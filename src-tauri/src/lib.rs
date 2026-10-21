@@ -158,6 +158,18 @@ async fn create_commit(path: String, message: String) -> Result<RepositorySnapsh
 }
 
 #[tauri::command]
+async fn act_on_commit(
+    path: String,
+    commit: String,
+    expected_head: String,
+    expected_branch: String,
+    action: git::CommitAction,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::act_on_commit(&path, &commit, &expected_head, &expected_branch, action))
+        .await
+}
+
+#[tauri::command]
 async fn checkout_branch(path: String, branch: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::checkout_branch(&path, &branch)).await
 }
@@ -193,6 +205,7 @@ pub fn run() {
             unstage_files,
             discard_changes,
             create_commit,
+            act_on_commit,
             checkout_branch,
             fetch_repository,
             push_repository

@@ -9,7 +9,9 @@ export interface GitFile {
   conflicted: boolean;
 }
 export interface GitBranch { name: string; current: boolean; remote: boolean }
-export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string }
+export interface GitCommitRef { name: string; remote: boolean }
+export type CommitAction = 'soft' | 'mixed' | 'revert';
+export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string; parents: string[]; refs: GitCommitRef[]; local: boolean; remote: boolean }
 export interface RepositorySnapshot {
   path: string;
   name: string;
@@ -22,6 +24,7 @@ export interface RepositorySnapshot {
   stashCount: number;
   remote: string | null;
   hasUpstream: boolean;
+  upstream: { name: string; hash: string } | null;
   ahead: number;
   behind: number;
   operation: string | null;
@@ -35,7 +38,7 @@ export interface FileComparison {
   modifiedExists: boolean;
 }
 export function emptyRepository(): RepositorySnapshot {
-  return { path: '', name: '', branch: '', head: null, gitVersion: '', files: [], branches: [], commits: [], stashCount: 0, remote: null, hasUpstream: false, ahead: 0, behind: 0, operation: null };
+  return { path: '', name: '', branch: '', head: null, gitVersion: '', files: [], branches: [], commits: [], stashCount: 0, remote: null, hasUpstream: false, upstream: null, ahead: 0, behind: 0, operation: null };
 }
 export const isDesktop = () => '__TAURI_INTERNALS__' in window;
 
@@ -55,6 +58,7 @@ export const git = {
   unstage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('unstage_files', { path, files }),
   discard: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('discard_changes', { path, files }),
   commit: (path: string, message: string) => invokeCommand<RepositorySnapshot>('create_commit', { path, message }),
+  actOnCommit: (path: string, commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => invokeCommand<RepositorySnapshot>('act_on_commit', { path, commit, expectedHead, expectedBranch, action }),
   checkout: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch }),
   fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
   push: (path: string) => invokeCommand<RepositorySnapshot>('push_repository', { path }),

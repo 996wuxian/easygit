@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTrash, IconX } from '@tabler/icons-react';
-import type { GitCommit, GitFile, RepositorySnapshot } from '../services/git';
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconFile, IconFileCode, IconGitBranch, IconHistory, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTrash, IconX } from '@tabler/icons-react';
+import type { GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
 import './panels.css';
 
@@ -56,9 +56,7 @@ export function BranchesPanel({ snapshot, busy, onCheckout }: { snapshot: Reposi
   return <div className="branches-content"><div className="list-section-label">本地分支 <span>{branches.length}</span></div>{branches.map(branch => <button className={`branch-row ${branch.current ? 'current' : ''}`} key={branch.name} disabled={busy || branch.current} title={branch.current ? '当前分支' : `切换到 ${branch.name}`} onClick={() => onCheckout(branch.name)}><IconGitBranch size={16} /><span>{branch.name}</span>{branch.current ? <span className="current-badge">当前</span> : <IconArrowRight size={14} className="branch-arrow" />}</button>)}{!branches.length && <div className="empty-inline">首次提交后会显示本地分支。</div>}<div className="branch-bottom"><span className="tiny-dot" />{snapshot.remote ? `${snapshot.remote} · ${snapshot.ahead} 个待推送，${snapshot.behind} 个待拉取` : '尚未配置远程仓库'}</div></div>;
 }
 
-export function CommitsPanel({ snapshot, onSelect }: { snapshot: RepositorySnapshot; onSelect: (commit: GitCommit) => void }) {
-  return <div className="commits-content">{snapshot.commits.slice(0, 5).map((commit, index) => <button className="commit-row" key={commit.hash} onClick={() => onSelect(commit)}><span className={`commit-graph-dot ${index === 0 ? 'latest' : ''}`}><IconGitCommit size={18} /></span><span className="commit-label"><strong>{commit.subject}</strong><small>{commit.author}<span>·</span>{new Date(commit.date).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</small></span><code>{commit.shortHash}</code></button>)}{!snapshot.commits.length && <div className="clean-state"><IconGitCommit size={28} stroke={1.3} /><strong>暂无提交</strong><span>创建第一次提交后可查看记录</span></div>}</div>;
-}
+export { CommitsPanel } from './commits/CommitsPanel';
 
 export function StashPanel({ count }: { count: number }) {
   return <div className="stash-content"><div className="stash-illustration"><IconInbox size={32} stroke={1.2} /></div><strong>{count ? `${count} 条暂存记录` : '没有暂存记录'}</strong><p>{count ? '更改已保存在 Git stash 中。' : '当前仓库没有 stash。'}</p></div>;
@@ -68,4 +66,4 @@ export function ActivityPanel({ activities }: { activities: Activity[] }) {
   return <div className="activity-content">{activities.length ? activities.slice(0, 8).map(item => <div className="activity-row" key={item.id}>{item.error ? <IconX size={15} className="error-color" /> : <IconCheck size={15} className="success-color" />}<span>{item.label}</span><time>{item.time}</time></div>) : <div className="clean-state"><IconArrowDown size={26} stroke={1.3} /><strong>暂无操作记录</strong><span>仓库操作的结果会记录在这里</span></div>}</div>;
 }
 
-export const panelIcons = { changes: IconFile, diff: IconCode, branches: IconGitBranch, commits: IconGitCommit, stash: IconStack2, activity: IconCircleCheck };
+export const panelIcons = { changes: IconFile, diff: IconCode, branches: IconGitBranch, commits: IconHistory, stash: IconStack2, activity: IconCircleCheck };

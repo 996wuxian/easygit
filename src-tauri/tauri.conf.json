@@ -23,6 +23,7 @@
       "center": true,
       "shadow": true,
       "dragDropEnabled": false,
+      "devtools": false,
       "backgroundColor": "#e7e8ed"
     }],
     "security": {

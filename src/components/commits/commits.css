@@ -1,0 +1,46 @@
+.commits-content, .commit-detail { --history-local: #4c87c9; --history-remote: #9670bf; }
+.commits-content { height: 100%; overflow-y: auto; padding: 0 12px 8px; }
+.history-summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 6px; background: var(--bg-card); border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 10px; }
+.history-summary > span, .history-summary > span > span { display: inline-flex; align-items: center; gap: 5px; }
+.history-summary > span { gap: 12px; }
+.history-summary small { font-size: 10px; color: var(--text-dim); }
+.history-row { display: flex; align-items: center; width: 100%; height: 56px; gap: 6px; padding: 0 6px 0 0; border-radius: 5px; text-align: left; }
+.history-row:hover { background: var(--bg-soft); }
+.history-row:focus-visible { outline: 1px solid var(--text-muted); outline-offset: -1px; }
+.history-graph { flex-shrink: 0; overflow: visible; color: var(--history-local); }
+.history-graph path { fill: none; stroke: var(--text-dim); stroke-width: 1.4; opacity: .6; }
+.history-graph circle { fill: currentColor; stroke: var(--bg-card); stroke-width: 1.2; }
+.history-graph circle.tip { fill: var(--bg-card); stroke: currentColor; stroke-width: 2; }
+.history-row.incoming .history-graph { color: var(--history-remote); }
+.history-row-content { flex: 1; min-width: 0; }
+.history-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.history-row-title > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 12px; font-weight: 500; line-height: 20px; }
+.commit-refs { display: inline-flex; align-items: center; flex-shrink: 1; gap: 4px; min-width: 0; max-width: 55%; }
+.commit-ref { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 140px; padding: 2px 6px; border-radius: 10px; color: var(--history-local); background: color-mix(in srgb, var(--history-local) 12%, var(--bg-card)); font: 10px/15px var(--mono); }
+.commit-ref.remote { color: var(--history-remote); background: color-mix(in srgb, var(--history-remote) 12%, var(--bg-card)); }
+.commit-ref > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--text-dim); font-size: 10px; line-height: 16px; }
+.history-author { max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row-meta > code { margin-left: auto; font: 10px var(--mono); }
+.commit-state.outgoing { color: var(--history-local); }
+.commit-state.incoming { color: var(--history-remote); }
+.commit-state.local, .commit-state.synced { color: var(--text-muted); }
+.history-range-note { padding: 8px 6px; color: var(--text-dim); font-size: 10px; overflow-wrap: anywhere; }
+:root[data-theme='dark'] .commits-content, :root[data-theme='dark'] .commit-detail { --history-local: #80b4ee; --history-remote: #bd97e7; }
+.commit-detail .commit-refs { max-width: 100%; flex-wrap: wrap; margin-bottom: 14px; }
+.commit-detail .commit-ref { max-width: 100%; }
+.commit-context-menu { position: fixed; z-index: 1200; width: 260px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-card); color: var(--text); box-shadow: 0 8px 30px #00000020; }
+.commit-context-heading { display: flex; align-items: center; gap: 7px; padding: 8px; color: var(--text-dim); font-size: 10px; }
+.commit-context-heading > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.commit-context-heading > code { flex-shrink: 0; font: 10px var(--mono); }
+.commit-context-menu > button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 7px 9px; border-radius: 5px; text-align: left; font-size: 12px; }
+.commit-context-menu > button > svg { color: var(--text-muted); }
+.commit-context-menu > button:not(:disabled):hover, .commit-context-menu > button:focus-visible { outline: none; background: var(--bg-card-hover); }
+.commit-context-menu > button:disabled { opacity: .45; }
+.commit-context-divider { height: 1px; margin: 5px 3px; background: var(--border); }
+.commit-context-note { padding: 7px 9px 4px; color: var(--text-dim); font-size: 10px; line-height: 1.6; }
+.commit-action-target { display: flex; align-items: center; gap: 10px; margin: 4px 0 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); }
+.commit-action-target > svg { flex-shrink: 0; color: var(--text-muted); }
+.commit-action-target > span { min-width: 0; }
+.commit-action-target strong { display: block; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.commit-action-target code { display: block; margin-top: 5px; color: var(--text-dim); font: 11px var(--mono); }

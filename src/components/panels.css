@@ -98,16 +98,6 @@
 .branch-arrow { opacity: 0; }
 .branch-row:hover .branch-arrow { opacity: 1; }
 .branch-bottom { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 12px 6px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 10px; }
-.commits-content { height: 100%; padding: 3px 15px; overflow-y: auto; }
-.commit-row { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; gap: 10px; padding: 12px 1px; border-bottom: 1px solid var(--border); text-align: left; }
-.commit-row:last-child { border-bottom: 0; }
-.commit-row:hover { background: var(--bg-soft); }
-.commit-graph-dot { flex-shrink: 0; display: flex; align-self: flex-start; margin-top: 1px; color: var(--text-dim); }
-.commit-graph-dot.latest { color: var(--primary); }
-.commit-label { flex: 1; min-width: 0; }
-.commit-label strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--text); }
-.commit-label small { display: flex; align-items: center; gap: 6px; margin-top: 5px; color: var(--text-dim); font-size: 10px; }
-.commit-row > code { flex-shrink: 0; margin-left: 5px; align-self: flex-start; margin-top: 3px; font: 10px var(--mono); color: var(--text-dim); }
 .stash-content { height: 100%; min-height: 176px; padding: 22px 14px; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
 .stash-illustration { color: var(--text-dim); margin-bottom: 15px; }
 .stash-content strong { color: var(--text-muted); font-size: 13px; font-weight: 500; }

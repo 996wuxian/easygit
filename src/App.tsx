@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconGitCommit, IconKey, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconCopy, IconFolder, IconFolderOpen, IconGitBranch, IconHistory, IconKey, IconLayoutDashboard, IconLayoutGrid, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, ActivityPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
@@ -10,6 +10,8 @@ import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
 import { git, isDesktop, type GitCommit } from './services/git';
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
+import { CommitRefs } from './components/commits/CommitsPanel';
+import { commitStatus } from './components/commits/model';
 import { useRepository, type RecentRepository } from './services/useRepository';
 import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
 
@@ -343,7 +345,13 @@ export default function App({ onReady }: { onReady: () => void }) {
       case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
-      case 'commits': return <CommitsPanel snapshot={snapshot} onSelect={setSelectedCommit} />;
+      case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={setSelectedCommit} busy={busy} notify={notify} onAction={async (commit, head, branch, action) => {
+        const path = snapshot.path;
+        const success = await repo.actOnCommit(commit.hash, head, branch, action);
+        if (success && action !== 'revert') setCommitDrafts(current => ({ ...current, [path]: commit.subject }));
+        if (!success) await repo.refresh(true);
+        return success;
+      }} />;
       case 'stash': return <StashPanel count={snapshot.stashCount} />;
       case 'activity': return <ActivityPanel activities={repo.activities} />;
     }
@@ -368,7 +376,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       <button className="rail-brand" title="easygit · 返回工作台" aria-label="返回工作台" onClick={() => { setActiveNav('workspace'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><img src="/brand/esaygit-icon.png" alt="" draggable={false} /></button>
       <nav className="main-nav" aria-label="主导航">
         <button title="工作台" aria-label="工作台" aria-current={activeNav === 'workspace' ? 'page' : undefined} className={activeNav === 'workspace' ? 'active' : ''} onClick={() => { setActiveNav('workspace'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><IconLayoutDashboard size={20} /></button>
-        <button title="提交历史" aria-label="提交历史" aria-current={activeNav === 'commits' ? 'page' : undefined} className={activeNav === 'commits' ? 'active' : ''} onClick={() => focusPanel('commits')}><IconGitCommit size={21} /></button>
+        <button title="提交历史" aria-label="提交历史" aria-current={activeNav === 'commits' ? 'page' : undefined} className={activeNav === 'commits' ? 'active' : ''} onClick={() => focusPanel('commits')}><IconHistory size={21} /></button>
         <button title="分支管理" aria-label="分支管理" aria-current={activeNav === 'branches' ? 'page' : undefined} className={activeNav === 'branches' ? 'active' : ''} onClick={() => focusPanel('branches')}><IconGitBranch size={20} /></button>
         <button title="操作记录" aria-label="操作记录" aria-current={activeNav === 'activity' ? 'page' : undefined} className={activeNav === 'activity' ? 'active' : ''} onClick={() => focusPanel('activity')}><IconTerminal2 size={20} /></button>
       </nav>
@@ -407,7 +415,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
         <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button><span className="toolbar-divider" /><button className="text-button" disabled={busy || !snapshot.remote} title={snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}><IconArrowDown size={14} />获取更新</button></div></div>
 
-        <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">最近 {Math.min(snapshot.commits.length, 5)} 次</span>}</>} />
+        <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">最近 {Math.min(snapshot.commits.length, 10)} 次</span>}</>} />
 
         <div className="workspace-footer"><span>{repo.gitVersion || snapshot.gitVersion}</span><span>拖动 <span className="footer-grip">⠿</span> 调整面板<span className="footer-divider">·</span><kbd>Ctrl K</kbd> 命令</span></div>
       </div> : <section className="repository-empty" aria-label="尚未打开仓库">
@@ -451,7 +459,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
 
-    {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconGitCommit size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
+    {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconHistory size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><CommitRefs commit={selectedCommit} /><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><p>{commitStatus(selectedCommit, snapshot.hasUpstream).label}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
 
     {removal && <RemoveWorkspaceDialog workspace={removal.workspace} busy={busy} onCancel={cancelRemoval} onConfirm={confirmRemoval} />}
     {discardConfirmation && <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => setDiscardConfirmation(null)} onConfirm={() => { void confirmDiscard(); }} />}

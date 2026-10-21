@@ -5,7 +5,7 @@ import {
   IconCode,
   IconFiles,
   IconGitBranch,
-  IconGitCommit,
+  IconHistory,
   IconGripVertical,
   IconPackage,
 } from "@tabler/icons-react";
@@ -25,7 +25,7 @@ const panelIcons = {
   changes: IconFiles,
   diff: IconCode,
   branches: IconGitBranch,
-  commits: IconGitCommit,
+  commits: IconHistory,
   stash: IconPackage,
   activity: IconActivity,
 };

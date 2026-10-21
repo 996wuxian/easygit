@@ -1,5 +1,8 @@
 use serde::Serialize;
+mod commit_actions;
 mod comparison;
+pub use commit_actions::{act_on_commit, CommitAction};
+mod history;
 pub use comparison::{read_file_comparison, FileComparison};
 use std::{
     collections::HashMap,
@@ -46,6 +49,24 @@ pub struct GitCommit {
     pub subject: String,
     pub author: String,
     pub date: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<GitCommitRef>,
+    pub local: bool,
+    pub remote: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRef {
+    pub name: String,
+    pub remote: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitUpstream {
+    pub name: String,
+    pub hash: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +83,7 @@ pub struct RepositorySnapshot {
     pub stash_count: usize,
     pub remote: Option<String>,
     pub has_upstream: bool,
+    pub upstream: Option<GitUpstream>,
     pub ahead: usize,
     pub behind: usize,
     pub operation: Option<String>,
@@ -278,27 +300,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
             },
         );
     }
-    let commits = if head.is_some() {
-        let log = run(
-            root,
-            &["log", "-40", "-z", "--format=%H%x00%h%x00%s%x00%an%x00%aI"],
-        )?;
-        let fields: Vec<&[u8]> = log.split(|byte| *byte == 0).collect();
-        fields
-            .chunks(5)
-            .filter(|fields| fields.len() == 5)
-            .map(|fields| GitCommit {
-                hash: String::from_utf8_lossy(fields[0]).into_owned(),
-                short_hash: String::from_utf8_lossy(fields[1]).into_owned(),
-                subject: String::from_utf8_lossy(fields[2]).into_owned(),
-                author: String::from_utf8_lossy(fields[3]).into_owned(),
-                date: String::from_utf8_lossy(fields[4]).into_owned(),
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let has_upstream = optional_text(
+    let upstream_name = optional_text(
         root,
         &[
             "rev-parse",
@@ -306,8 +308,14 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
             "--symbolic-full-name",
             "@{upstream}",
         ],
-    )?
-    .is_some();
+    )?;
+    let upstream = match upstream_name {
+        Some(name) => optional_text(root, &["rev-parse", "--verify", "@{upstream}^{commit}"])?
+            .map(|hash| GitUpstream { name, hash }),
+        None => None,
+    };
+    let has_upstream = upstream.is_some();
+    let commits = history::read_history(root, head.as_deref(), &branch, upstream.as_ref())?;
     let counts = if has_upstream {
         optional_text(
             root,
@@ -369,6 +377,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         stash_count,
         remote,
         has_upstream,
+        upstream,
         ahead,
         behind,
         operation,

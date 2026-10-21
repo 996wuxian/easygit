@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyRepository, git, isDesktop, type RepositorySnapshot } from './git';
+import { emptyRepository, git, isDesktop, type CommitAction, type RepositorySnapshot } from './git';
 import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
@@ -116,6 +116,7 @@ export function useRepository(onReady: () => void) {
   const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths));
   const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回全部未暂存更改', path => git.discard(path, paths));
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
+  const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
   const fetch = () => run('远程引用已更新', path => git.fetch(path));
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
@@ -138,5 +139,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, checkout, fetch, push, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
 }

@@ -6,6 +6,13 @@ import { flushStorage, initializeStorage, STORAGE_ERROR_EVENT } from './services
 import './App.css';
 
 const started = performance.now();
+document.addEventListener('contextmenu', event => event.preventDefault(), true);
+window.addEventListener('keydown', event => {
+  if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && ['i', 'j', 'c'].includes(event.key.toLowerCase()))) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+}, true);
 export function finishBoot() {
   const remaining = Math.max(0, 850 - (performance.now() - started));
   window.setTimeout(() => {
