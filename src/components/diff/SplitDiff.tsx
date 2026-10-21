@@ -8,18 +8,19 @@ import { Syntax } from './Syntax';
 const ROW_HEIGHT = 24;
 const OVERSCAN = 20;
 
-const SourceRow = memo(function SourceRow({ line, block, blockNumber, onDiscardBlock }: { line: SourceLine | null; block?: DiffBlock; blockNumber?: number; onDiscardBlock?: (block: DiffBlock) => void }) {
+const SourceRow = memo(function SourceRow({ line, block, blockNumber, onDiscardBlock, discardBlockDisabled }: { line: SourceLine | null; block?: DiffBlock; blockNumber?: number; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean }) {
   return <div className={`source-line ${line?.kind ?? 'empty'}`}>
     <span className="source-line-number" aria-hidden="true">{line?.number ?? ''}</span>
-    <span className="source-line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockNumber}`} title="撤回该变更块，保留其他更改" onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : <span aria-hidden="true">{line?.kind === 'added' ? '+' : line?.kind === 'removed' ? '−' : ''}</span>}</span>
+    <span className="source-line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockNumber}`} title="撤回该变更块，保留其他更改" disabled={discardBlockDisabled} onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : <span aria-hidden="true">{line?.kind === 'added' ? '+' : line?.kind === 'removed' ? '−' : ''}</span>}</span>
     <code>{line && <Syntax text={line.text} />}</code>
   </div>;
 });
 
-export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath, onDiscardBlock }: {
+export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath, onDiscardBlock, discardBlockDisabled }: {
   comparison: FileComparison;
   originalLabel: string; modifiedLabel: string; originalPath: string; modifiedPath: string;
   onDiscardBlock?: (block: DiffBlock) => void;
+  discardBlockDisabled?: boolean;
 }) {
   const rows = useMemo(() => buildComparisonRows(comparison), [comparison.diff, comparison.unchanged]);
   const changes = useMemo(() => buildComparisonChanges(rows), [rows]);
@@ -100,7 +101,7 @@ export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPa
           {rows.length ? <div className="source-lines" style={{ height: rows.length * ROW_HEIGHT, width: `max(100%, calc(${widths[side]}ch + 88px))` }}>
             <div className="source-visible-lines" style={{ top: start * ROW_HEIGHT }}>{rows.slice(start, end).map((row, index) => {
               const action = !original ? blockStarts.get(start + index) : undefined;
-              return <SourceRow line={row[side]} block={action?.block} blockNumber={action?.number} onDiscardBlock={onDiscardBlock} key={start + index} />;
+              return <SourceRow line={row[side]} block={action?.block} blockNumber={action?.number} onDiscardBlock={onDiscardBlock} discardBlockDisabled={discardBlockDisabled} key={start + index} />;
             })}</div>
           </div> : <div className="diff-empty"><span>{exists ? '空文件' : '此版本中没有该文件'}</span></div>}
         </div>

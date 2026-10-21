@@ -25,6 +25,7 @@
 .diff-file-actions .secondary-button { min-height: 27px; font-size: 11px; }
 .diff-file-actions.has-conflict > span { color: var(--danger); }
 .diff-discard-action:hover { color: var(--danger); }
+.diff-refresh-error { color: var(--danger); }
 .diff-block-undo { display: inline-flex; align-items: center; justify-content: center; vertical-align: top; width: 20px; height: 22px; padding: 0; border-radius: 4px; color: var(--text-muted); background: var(--bg-card); cursor: pointer; }
 .diff-block-undo:hover, .diff-block-undo:focus-visible { color: var(--danger); background: var(--bg-card-hover); }
 .dialog.discard-block-dialog { width: 780px; }

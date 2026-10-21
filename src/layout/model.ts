@@ -1,6 +1,6 @@
 import { appStorage } from '../services/storage';
 
-export const PANEL_IDS = ["changes", "diff", "branches", "commits", "stash", "activity"] as const;
+export const PANEL_IDS = ["changes", "diff", "branches", "commits", "stash", "activity", "scripts"] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 
 export interface PanelLayout {

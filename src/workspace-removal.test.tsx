@@ -97,7 +97,7 @@ describe('工作区移除交互', () => {
     await act(async () => { await repository.open(alpha.path); });
     let resolveRefresh!: (value: typeof snapshot) => void;
     vi.mocked(git.open).mockImplementationOnce(() => new Promise(resolve => { resolveRefresh = resolve; }));
-    let pending!: Promise<void>;
+    let pending!: Promise<boolean>;
     await act(async () => { pending = repository.refresh(true); });
     await act(async () => { repository.removeWorkspace(alpha); });
     await act(async () => { resolveRefresh(snapshot); await pending; });

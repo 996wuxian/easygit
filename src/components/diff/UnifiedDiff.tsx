@@ -5,7 +5,7 @@ import { getDiffBlocks } from './model';
 
 export const isCombinedDiff = (diff: string) => /^diff --(?:cc|combined) /m.test(diff) || /^@@@ /m.test(diff);
 
-export function UnifiedDiff({ diff, onDiscardBlock }: { diff: string; onDiscardBlock?: (block: DiffBlock) => void }) {
+export function UnifiedDiff({ diff, onDiscardBlock, discardBlockDisabled = false }: { diff: string; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean }) {
   if (isCombinedDiff(diff)) return <div className="conflict-diff"><div className="conflict-diff-note">文件存在合并冲突。以下为原始差异，请在编辑器中解决冲突。</div><pre>{diff}</pre></div>;
   let oldLine = 0;
   let newLine = 0;
@@ -35,6 +35,6 @@ export function UnifiedDiff({ diff, onDiscardBlock }: { diff: string; onDiscardB
     const special = line.startsWith('\\') || !oldLine && !newLine;
     const old = type !== 'added' && !special ? oldLine++ : '';
     const next = type !== 'removed' && !special ? newLine++ : '';
-    return <div className={`code-line ${type}`} key={index}><span className="line-number">{old}</span><span className="line-number">{next}</span><span className="line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockIndex + 1}`} title="撤回该变更块，保留其他更改" onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : type === 'added' ? '+' : type === 'removed' ? '−' : ' '}</span><code><Syntax text={line.startsWith(' ') || type !== 'context' ? line.slice(1) : line} /></code></div>;
+    return <div className={`code-line ${type}`} key={index}><span className="line-number">{old}</span><span className="line-number">{next}</span><span className="line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockIndex + 1}`} title="撤回该变更块，保留其他更改" disabled={discardBlockDisabled} onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : type === 'added' ? '+' : type === 'removed' ? '−' : ' '}</span><code><Syntax text={line.startsWith(' ') || type !== 'context' ? line.slice(1) : line} /></code></div>;
   })}</div>;
 }

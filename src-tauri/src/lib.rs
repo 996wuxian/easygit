@@ -1,5 +1,6 @@
 mod git;
 mod process;
+mod project;
 mod storage;
 
 use git::{BootstrapInfo, RepositorySnapshot};
@@ -31,6 +32,21 @@ async fn open_repository(path: String) -> Result<RepositorySnapshot, String> {
 #[tauri::command]
 async fn open_repository_directory(path: String) -> Result<(), String> {
     blocking(move || git::open_repository_directory(&path)).await
+}
+
+#[tauri::command]
+async fn read_project_scripts(path: String) -> Result<project::ProjectScripts, String> {
+    blocking(move || project::read_scripts(&path)).await
+}
+
+#[tauri::command]
+async fn run_project_script(
+    path: String,
+    name: String,
+    expected_command: String,
+    expected_manager: String,
+) -> Result<(), String> {
+    blocking(move || project::run_script(&path, &name, &expected_command, &expected_manager)).await
 }
 
 #[tauri::command]
@@ -229,6 +245,8 @@ pub fn run() {
             bootstrap,
             open_repository,
             open_repository_directory,
+            read_project_scripts,
+            run_project_script,
             read_diff,
             read_file_comparison,
             read_staged_diff,

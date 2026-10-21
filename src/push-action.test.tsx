@@ -22,6 +22,7 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem('esaygit.recent.v1', JSON.stringify([workspace]));
   vi.mocked(git.open).mockResolvedValue(snapshot);
+  vi.mocked(git.fetch).mockResolvedValue(snapshot);
   vi.mocked(git.diff).mockResolvedValue('');
   vi.mocked(git.push).mockResolvedValue({ ...snapshot, hasUpstream: true, ahead: 0 });
   host = document.createElement('div');
@@ -59,7 +60,7 @@ describe('推送入口', () => {
   });
 
   it('有待推送提交时显示数量，推送后状态刷新', async () => {
-    vi.mocked(git.open).mockResolvedValueOnce({ ...snapshot, hasUpstream: true, ahead: 2 });
+    vi.mocked(git.open).mockResolvedValue({ ...snapshot, hasUpstream: true, ahead: 2 });
     await openWorkspace();
     const button = host.querySelector<HTMLButtonElement>('[aria-label="推送当前分支"]')!;
     expect(button.title).toContain('2 个待推送提交');
@@ -76,11 +77,40 @@ describe('推送入口', () => {
       { ...snapshot, hasUpstream: true, ahead: 0 },
     ];
     for (const state of states) {
-      vi.mocked(git.open).mockResolvedValueOnce(state);
+      vi.mocked(git.open).mockResolvedValue(state);
       await openWorkspace();
       expect((host.querySelector('[aria-label="推送当前分支"]') as HTMLButtonElement).disabled).toBe(true);
       await act(async () => root.unmount());
       root = createRoot(host);
     }
+  });
+});
+
+describe('项目远程状态展示', () => {
+  it('打开后显示后台获取状态，保留已有历史行，并展示获取到的提交与分支', async () => {
+    let finish!: (value: RepositorySnapshot) => void;
+    vi.mocked(git.fetch).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const date = new Date().toISOString();
+    const localCommit = { hash: 'abc123', shortHash: 'abc123', subject: 'Local history', author: 'Developer', date, parents: [], refs: [{ name: 'main', remote: false }], local: true, remote: true };
+    const local = { ...snapshot, hasUpstream: true, upstream: { name: 'origin/main', hash: 'abc123' }, commits: [localCommit], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date }] };
+    vi.mocked(git.open).mockResolvedValue(local);
+    await openWorkspace();
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="获取远程更新"]')!;
+    const history = host.querySelector('.history-row');
+    expect(history?.textContent).toContain('Local history');
+    expect(button.textContent).toBe('正在获取');
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.disabled).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="刷新仓库"]')!.disabled).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="打开仓库 Alpha"]')!.disabled).toBe(false);
+    const latest = { ...local, behind: 1, upstream: { name: 'origin/main', hash: 'remote-tip' }, commits: [{ ...localCommit, hash: 'remote-tip', shortHash: 'remote', subject: 'New remote commit', parents: ['abc123'], refs: [{ name: 'origin/main', remote: true }], local: false }, localCommit], branches: [...local.branches, { name: 'origin/feature', current: false, remote: true, lastCommitDate: date }] };
+    vi.mocked(git.open).mockResolvedValue(latest);
+    await act(async () => { finish(local); });
+    expect(button.textContent).toBe('获取更新');
+    expect(button.disabled).toBe(false);
+    expect(host.textContent).toContain('New remote commit');
+    expect(host.textContent).toContain('origin/feature');
+    expect(host.textContent).toContain('1 个待拉取');
+    expect(Array.from(host.querySelectorAll('.history-row')).find(row => row.textContent?.includes('Local history'))).toBe(history);
   });
 });

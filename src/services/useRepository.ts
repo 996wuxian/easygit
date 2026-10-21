@@ -4,6 +4,7 @@ import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean }
+interface RemoteRequest { path: string; session: number; reading: boolean; promise: Promise<boolean>; complete: (updated: boolean) => void }
 const RECENTS_KEY = 'esaygit.recent.v1';
 function loadRecents(): RecentRepository[] {
   try {
@@ -25,6 +26,10 @@ export function useRepository(onReady: () => void) {
   const snapshotRef = useRef(snapshot);
   const generation = useRef(0);
   const busyRef = useRef(false);
+  const refreshRequest = useRef<{ path: string; token: number; promise: Promise<boolean>; notified: boolean } | null>(null);
+  const session = useRef(0);
+  const remoteRequest = useRef<RemoteRequest | null>(null);
+  const [remoteSync, setRemoteSync] = useState<{ request: RemoteRequest; fetched: boolean } | null>(null);
   const hasRepository = Boolean(snapshot.path);
   snapshotRef.current = snapshot;
 
@@ -32,6 +37,32 @@ export function useRepository(onReady: () => void) {
     setNotice({ message, error });
     setActivities(items => [{ id: crypto.randomUUID(), label: message, error, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }, ...items].slice(0, 40));
   }, []);
+
+  const fetch = useCallback(() => {
+    const current = snapshotRef.current;
+    if (!current.path || !current.remote) return Promise.resolve(false);
+    const existing = remoteRequest.current;
+    if (existing?.path === current.path && existing.session === session.current) return existing.promise;
+    let complete!: RemoteRequest['complete'];
+    const promise = new Promise<boolean>(resolve => { complete = resolve; });
+    const request: RemoteRequest = { path: current.path, session: session.current, reading: false, promise, complete };
+    remoteRequest.current = request;
+    setRemoteSync({ request, fetched: false });
+    // Fetch runs independently of the selected workspace and never locks navigation.
+    // Re-read after it completes: its returned snapshot may predate another local action.
+    void git.fetch(request.path).then(() => {
+      if (remoteRequest.current !== request) return request.complete(false);
+      setRemoteSync({ request, fetched: true });
+    }, error => {
+      if (remoteRequest.current === request) {
+        remoteRequest.current = null;
+        setRemoteSync(null);
+        notify(`获取远程更新失败：${String(error)}`, true);
+      }
+      request.complete(false);
+    });
+    return promise;
+  }, [notify]);
 
   const open = useCallback(async (path: string) => {
     if (busyRef.current) return false;
@@ -41,6 +72,10 @@ export function useRepository(onReady: () => void) {
     try {
       const next = await git.open(path.trim());
       if (token !== generation.current) return false;
+      session.current++;
+      remoteRequest.current?.complete(false);
+      remoteRequest.current = null;
+      setRemoteSync(null);
       snapshotRef.current = next;
       setSnapshot(next);
       setRecents(current => {
@@ -49,10 +84,11 @@ export function useRepository(onReady: () => void) {
         return updated;
       });
       notify(`已打开 ${next.name}`);
+      void fetch();
       return true;
     } catch (error) { notify(String(error), true); return false; }
     finally { busyRef.current = false; setBusy(false); }
-  }, [notify]);
+  }, [fetch, notify]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,17 +111,65 @@ export function useRepository(onReady: () => void) {
     return () => { cancelled = true; };
   }, [notify, onReady, open]);
 
-  const refresh = useCallback(async (quiet = false) => {
-    if (!snapshotRef.current.path || busyRef.current) return;
+  const refresh = useCallback(async (quiet = false, message = '仓库状态已刷新') => {
+    const path = snapshotRef.current.path;
+    if (!path || busyRef.current) return false;
     const token = generation.current;
+    let request = refreshRequest.current;
+    if (!request || request.path !== path || request.token !== token) {
+      const promise = git.open(path).then(next => {
+        if (token !== generation.current || busyRef.current) return false;
+        snapshotRef.current = next;
+        setSnapshot(next);
+        return true;
+      });
+      request = { path, token, promise, notified: false };
+      refreshRequest.current = request;
+    }
     try {
-      const next = await git.open(snapshotRef.current.path);
-      if (token !== generation.current || busyRef.current) return;
-      snapshotRef.current = next;
-      setSnapshot(next);
-      if (!quiet) notify('仓库状态已刷新');
-    } catch (error) { if (!quiet && token === generation.current) notify(String(error), true); }
+      const updated = await request.promise;
+      if (updated && token === generation.current && !busyRef.current && !quiet && !request.notified) {
+        request.notified = true;
+        notify(message);
+      }
+      return updated;
+    } catch (error) {
+      if (!quiet && token === generation.current && !request.notified) {
+        request.notified = true;
+        notify(String(error), true);
+      }
+      return false;
+    } finally {
+      if (refreshRequest.current === request) refreshRequest.current = null;
+    }
   }, [notify]);
+
+  useEffect(() => {
+    if (busy || busyRef.current || !remoteSync?.fetched) return;
+    const { request } = remoteSync;
+    if (remoteRequest.current !== request || request.reading) return;
+    request.reading = true;
+    // Drop reads started before fetch, and wait for any local write to finish.
+    const token = ++generation.current;
+    void refresh(false, '远程分支和提交记录已更新').then(updated => {
+      if (remoteRequest.current !== request) return request.complete(false);
+      if (token !== generation.current || busyRef.current) {
+        request.reading = false;
+        setRemoteSync({ request, fetched: true });
+        return;
+      }
+      remoteRequest.current = null;
+      setRemoteSync(null);
+      request.complete(updated);
+    });
+  }, [busy, refresh, remoteSync]);
+
+  useEffect(() => () => {
+    generation.current++;
+    session.current++;
+    remoteRequest.current?.complete(false);
+    remoteRequest.current = null;
+  }, []);
 
   useEffect(() => {
     if (!hasRepository) return;
@@ -120,13 +204,16 @@ export function useRepository(onReady: () => void) {
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
-  const fetch = () => run('远程引用已更新', path => git.fetch(path));
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
   const removeWorkspace = useCallback((workspace: RecentRepository) => {
     if (busyRef.current) return false;
     if (snapshotRef.current.path === workspace.path) {
       // Invalidate background refreshes before clearing the selected workspace.
       generation.current++;
+      session.current++;
+      remoteRequest.current?.complete(false);
+      remoteRequest.current = null;
+      setRemoteSync(null);
       const empty = emptyRepository();
       snapshotRef.current = empty;
       setSnapshot(empty);
@@ -141,5 +228,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, fetch, push, removeWorkspace };
 }

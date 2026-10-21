@@ -1,0 +1,21 @@
+.eg-panel--scripts .eg-panel-content { height: 260px; }
+.project-scripts-content { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.project-scripts-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 39px; padding: 3px 14px; border-bottom: 1px solid var(--border); }
+.project-scripts-toolbar > span { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; color: var(--text-muted); }
+.project-scripts-toolbar code { font-size: 11px; }
+.project-scripts-toolbar b { padding: 2px 6px; border-radius: 4px; background: var(--primary-soft); color: var(--primary); font: 10px var(--mono); }
+.project-scripts-toolbar small { color: var(--text-dim); font-size: 10px; }
+.project-scripts-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-content: start; flex: 1; min-height: 0; gap: 6px 10px; padding: 10px 12px; overflow: auto; }
+.project-script-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 52px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.project-script-row:hover { background: var(--bg-soft); }
+.project-script-row > div { display: grid; flex: 1; min-width: 0; gap: 5px; }
+.project-script-row strong, .project-script-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-script-row strong { font-size: 12px; font-weight: 550; }
+.project-script-row code { color: var(--text-muted); font-size: 10px; }
+.project-script-run.icon-button { color: var(--primary); background: var(--primary-soft); }
+.project-script-run.icon-button:not(:disabled):hover { color: var(--action-text); background: var(--action); }
+.project-scripts-footer { flex-shrink: 0; padding: 7px 14px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-scripts-footer.refresh-error { color: var(--danger); }
+.project-scripts-empty { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; overflow: auto; color: var(--text-dim); text-align: center; }
+.project-scripts-empty strong { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.project-scripts-empty span { max-width: 100%; color: var(--text-muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }

@@ -36,6 +36,16 @@ describe("workspace layout persistence", () => {
 });
 
 describe("panel movement", () => {
+  it("adds the scripts panel to saved layouts and allows moving and hiding it", () => {
+    const oldOrder = ["changes", "diff", "branches", "commits", "stash", "activity"];
+    const restored = normalizePanelLayout({ version: 1, order: oldOrder, hidden: ["activity"] });
+    expect(restored.order).toEqual([...oldOrder, "scripts"]);
+    expect(visiblePanelIds(restored)).toContain("scripts");
+    const moved = movePanelInLayout(restored, "scripts", "changes");
+    expect(moved.order[0]).toBe("scripts");
+    expect(visiblePanelIds(togglePanelInLayout(moved, "scripts"))).not.toContain("scripts");
+    expect(defaultPanelLayout().hidden).not.toContain("scripts");
+  });
   it("keeps hidden modules and all visible modules across repeated moves", () => {
     let layout = defaultPanelLayout();
     const originalOrder = [...layout.order];

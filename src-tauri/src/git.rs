@@ -183,7 +183,7 @@ pub fn bootstrap() -> BootstrapInfo {
     }
 }
 
-fn repository_root(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn repository_root(path: &str) -> Result<PathBuf, String> {
     let input = Path::new(path);
     if !input.is_dir() {
         return Err("仓库路径不存在，或不是一个文件夹。".to_owned());
@@ -839,6 +839,81 @@ mod tests {
         assert!(create_commit(path, " ").is_err());
         assert!(fetch_repository(path).unwrap_err().contains("远程"));
         assert!(push_repository(path).unwrap_err().contains("远程"));
+    }
+
+    #[test]
+    fn fetch_updates_remote_history_and_branches_without_changing_local_work() {
+        let remote = tempfile::tempdir().unwrap();
+        run(remote.path(), &["init", "--bare", "-b", "main"]).unwrap();
+        let directory = repo();
+        let root = directory.path();
+        let path = root.to_str().unwrap();
+        run(
+            root,
+            &["remote", "add", "origin", remote.path().to_str().unwrap()],
+        )
+        .unwrap();
+        fs::write(root.join("README.md"), "base\n").unwrap();
+        stage_files(path, &["README.md".to_owned()]).unwrap();
+        let base = create_commit(path, "shared base").unwrap().head.unwrap();
+        push_repository(path).unwrap();
+
+        let contributor = repo();
+        let contributor_root = contributor.path();
+        run(
+            contributor_root,
+            &["remote", "add", "origin", remote.path().to_str().unwrap()],
+        )
+        .unwrap();
+        fetch_repository(contributor_root.to_str().unwrap()).unwrap();
+        run(contributor_root, &["reset", "--hard", "origin/main"]).unwrap();
+        run(
+            contributor_root,
+            &["commit", "--allow-empty", "-m", "remote update"],
+        )
+        .unwrap();
+        let remote_tip = run_text(contributor_root, &["rev-parse", "HEAD"]).unwrap();
+        run(
+            contributor_root,
+            &["push", "origin", "HEAD:main", "HEAD:feature/new"],
+        )
+        .unwrap();
+
+        fs::write(root.join("README.md"), "staged work\n").unwrap();
+        stage_files(path, &["README.md".to_owned()]).unwrap();
+        fs::write(root.join("README.md"), "working changes\n").unwrap();
+        let index_before = run_text(root, &["rev-parse", ":README.md"]).unwrap();
+        let before = open_repository(path).unwrap();
+        assert_eq!(before.behind, 0);
+        assert!(!before
+            .commits
+            .iter()
+            .any(|commit| commit.hash == remote_tip));
+
+        let after = fetch_repository(path).unwrap();
+        assert_eq!(after.head.as_deref(), Some(base.as_str()));
+        assert_eq!((after.ahead, after.behind), (0, 1));
+        assert_eq!(after.upstream.unwrap().hash, remote_tip);
+        assert!(after
+            .branches
+            .iter()
+            .any(|branch| branch.name == "origin/feature/new" && branch.remote));
+        let incoming = after
+            .commits
+            .iter()
+            .find(|commit| commit.hash == remote_tip)
+            .unwrap();
+        assert_eq!(incoming.subject, "remote update");
+        assert!(incoming.remote && !incoming.local);
+        assert_eq!(
+            run_text(root, &["rev-parse", ":README.md"]).unwrap(),
+            index_before
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("README.md")).unwrap(),
+            "working changes\n"
+        );
+        assert!(after.files[0].staged && after.files[0].unstaged);
     }
 
     #[test]

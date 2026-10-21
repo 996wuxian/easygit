@@ -8,6 +8,7 @@ import {
   IconHistory,
   IconGripVertical,
   IconPackage,
+  IconTerminal2,
 } from "@tabler/icons-react";
 import { panelSlotSpan, visiblePanelIds, type PanelId, type PanelLayout } from "./model";
 import "./layout.css";
@@ -19,6 +20,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   commits: "提交记录",
   stash: "暂存架",
   activity: "操作记录",
+  scripts: "项目脚本",
 };
 
 const panelIcons = {
@@ -28,6 +30,7 @@ const panelIcons = {
   commits: IconHistory,
   stash: IconPackage,
   activity: IconActivity,
+  scripts: IconTerminal2,
 };
 
 interface DragSession {
