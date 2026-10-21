@@ -62,6 +62,11 @@ async fn fetch_repository(path: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::fetch_repository(&path)).await
 }
 
+#[tauri::command]
+async fn push_repository(path: String) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::push_repository(&path)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -74,7 +79,8 @@ pub fn run() {
             discard_changes,
             create_commit,
             checkout_branch,
-            fetch_repository
+            fetch_repository,
+            push_repository
         ])
         .run(tauri::generate_context!())
         .expect("无法启动 easygit");

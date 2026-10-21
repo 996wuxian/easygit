@@ -21,13 +21,14 @@ export interface RepositorySnapshot {
   commits: GitCommit[];
   stashCount: number;
   remote: string | null;
+  hasUpstream: boolean;
   ahead: number;
   behind: number;
   operation: string | null;
 }
 export interface BootstrapResult { gitAvailable: boolean; gitVersion: string | null; error: string | null }
 export function emptyRepository(): RepositorySnapshot {
-  return { path: '', name: '', branch: '', head: null, gitVersion: '', files: [], branches: [], commits: [], stashCount: 0, remote: null, ahead: 0, behind: 0, operation: null };
+  return { path: '', name: '', branch: '', head: null, gitVersion: '', files: [], branches: [], commits: [], stashCount: 0, remote: null, hasUpstream: false, ahead: 0, behind: 0, operation: null };
 }
 export const isDesktop = () => '__TAURI_INTERNALS__' in window;
 
@@ -47,4 +48,5 @@ export const git = {
   commit: (path: string, message: string) => call<RepositorySnapshot>('create_commit', { path, message }),
   checkout: (path: string, branch: string) => call<RepositorySnapshot>('checkout_branch', { path, branch }),
   fetch: (path: string) => call<RepositorySnapshot>('fetch_repository', { path }),
+  push: (path: string) => call<RepositorySnapshot>('push_repository', { path }),
 };

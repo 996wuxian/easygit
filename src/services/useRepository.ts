@@ -117,6 +117,7 @@ export function useRepository(onReady: () => void) {
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
   const fetch = () => run('远程引用已更新', path => git.fetch(path));
+  const push = () => run('更改已推送到远程仓库', path => git.push(path));
   const removeWorkspace = useCallback((workspace: RecentRepository) => {
     if (busyRef.current) return false;
     if (snapshotRef.current.path === workspace.path) {
@@ -136,5 +137,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, checkout, fetch, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, commit, checkout, fetch, push, removeWorkspace };
 }

@@ -59,6 +59,7 @@ pub struct RepositorySnapshot {
     pub commits: Vec<GitCommit>,
     pub stash_count: usize,
     pub remote: Option<String>,
+    pub has_upstream: bool,
     pub ahead: usize,
     pub behind: usize,
     pub operation: Option<String>,
@@ -295,11 +296,25 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
     } else {
         Vec::new()
     };
-    let counts = optional_text(
+    let has_upstream = optional_text(
         root,
-        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
     )?
-    .unwrap_or_default();
+    .is_some();
+    let counts = if has_upstream {
+        optional_text(
+            root,
+            &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        )?
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
     let mut counts = counts.split_whitespace();
     let ahead = counts
         .next()
@@ -351,6 +366,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         commits,
         stash_count,
         remote,
+        has_upstream,
         ahead,
         behind,
         operation,
@@ -532,6 +548,39 @@ pub fn fetch_repository(path: &str) -> Result<RepositorySnapshot, String> {
     })
 }
 
+pub fn push_repository(path: &str) -> Result<RepositorySnapshot, String> {
+    with_repository(path, |root| {
+        let remotes = run_text(root, &["remote"])?;
+        let remote = remotes
+            .lines()
+            .find(|name| *name == "origin")
+            .or_else(|| remotes.lines().next())
+            .ok_or_else(|| "此仓库尚未配置远程仓库。".to_owned())?;
+        if optional_text(root, &["rev-parse", "--verify", "HEAD"])?.is_none() {
+            return Err("当前分支还没有提交，无法推送。".to_owned());
+        }
+        if optional_text(root, &["symbolic-ref", "--quiet", "HEAD"])?.is_none() {
+            return Err("游离 HEAD 状态无法推送，请先切换到本地分支。".to_owned());
+        }
+        let has_upstream = optional_text(
+            root,
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        )?
+        .is_some();
+        if has_upstream {
+            run(root, &["push"])?;
+        } else {
+            run(root, &["push", "--set-upstream", remote, "HEAD"])?;
+        }
+        snapshot(root)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,6 +666,40 @@ mod tests {
         assert!(stage_files(path, &["../outside.txt".to_owned()]).is_err());
         assert!(create_commit(path, " ").is_err());
         assert!(fetch_repository(path).unwrap_err().contains("远程"));
+        assert!(push_repository(path).unwrap_err().contains("远程"));
+    }
+
+    #[test]
+    fn push_sets_upstream_then_sends_later_commits() {
+        let remote = tempfile::tempdir().unwrap();
+        run(remote.path(), &["init", "--bare", "-b", "main"]).unwrap();
+        let directory = repo();
+        let path = directory.path().to_str().unwrap();
+        let remote_path = remote.path().to_str().unwrap();
+        run(directory.path(), &["remote", "add", "origin", remote_path]).unwrap();
+        fs::write(directory.path().join("README.md"), "first\n").unwrap();
+        stage_files(path, &["README.md".to_owned()]).unwrap();
+        create_commit(path, "initial").unwrap();
+
+        let first_push = push_repository(path).unwrap();
+        assert!(first_push.has_upstream);
+        assert_eq!(first_push.ahead, 0);
+        assert_eq!(
+            run_text(remote.path(), &["rev-parse", "refs/heads/main"]).unwrap(),
+            first_push.head.unwrap()
+        );
+
+        fs::write(directory.path().join("README.md"), "second\n").unwrap();
+        stage_files(path, &["README.md".to_owned()]).unwrap();
+        create_commit(path, "second commit").unwrap();
+        assert_eq!(open_repository(path).unwrap().ahead, 1);
+
+        let second_push = push_repository(path).unwrap();
+        assert_eq!(second_push.ahead, 0);
+        assert_eq!(
+            run_text(remote.path(), &["rev-parse", "refs/heads/main"]).unwrap(),
+            second_push.head.unwrap()
+        );
     }
 
     #[test]

@@ -127,6 +127,7 @@ code, .mono { font-family: var(--mono); }
 .icon-button:hover, .icon-button.active { color: var(--text); background: var(--bg-card-hover); }
 .text-button { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; padding: 0; white-space: nowrap; }
 .text-button:hover { color: var(--text); }
+.push-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 5px; background: var(--bg-soft); color: var(--text-muted); font: 10px var(--mono); }
 .workspace-body { max-width: 1700px; margin: 0 auto; padding: 16px 25px 14px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 .page-heading h1 { display: flex; align-items: baseline; gap: 13px; font-size: 25px; line-height: 1.4; font-weight: 600; letter-spacing: -.8px; margin: 0; }
