@@ -1,5 +1,6 @@
 mod git;
 mod process;
+mod storage;
 
 use git::{BootstrapInfo, RepositorySnapshot};
 
@@ -39,12 +40,15 @@ async fn read_staged_diff(path: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn generate_commit_message(
-    api_key: String,
+    app: tauri::AppHandle,
     base_url: String,
     model: String,
     diff: String,
 ) -> Result<String, String> {
-    let api_key = api_key.trim().to_owned();
+    let api_key = storage::read_ai_api_key(app)?
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
     let base_url = base_url.trim().trim_end_matches('/').to_owned();
     let model = model.trim().to_owned();
     if api_key.is_empty() {
@@ -163,6 +167,13 @@ async fn push_repository(path: String) -> Result<RepositorySnapshot, String> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            storage::read_app_data,
+            storage::write_app_data,
+            storage::read_ai_api_key,
+            storage::write_ai_api_key,
+            storage::get_data_directory,
+            storage::migrate_data_directory,
+            storage::open_data_directory,
             bootstrap,
             open_repository,
             read_diff,

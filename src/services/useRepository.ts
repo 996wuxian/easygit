@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type RepositorySnapshot } from './git';
+import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean }
 const RECENTS_KEY = 'esaygit.recent.v1';
 function loadRecents(): RecentRepository[] {
   try {
-    const data: unknown = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]');
+    const data: unknown = JSON.parse(appStorage.getItem(RECENTS_KEY) ?? '[]');
     return Array.isArray(data) ? data.filter((v): v is RecentRepository => v && typeof v.name === 'string' && typeof v.path === 'string' && !v.path.startsWith('demo:')).slice(0, 8) : [];
   } catch { return []; }
 }
 function remember(recents: RecentRepository[]) {
-  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(recents)); } catch { /* storage can be unavailable */ }
+  try { appStorage.setItem(RECENTS_KEY, JSON.stringify(recents)); } catch { /* storage can be unavailable */ }
 }
 
 export function useRepository(onReady: () => void) {

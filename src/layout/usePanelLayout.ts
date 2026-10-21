@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { appStorage } from '../services/storage';
 import {
   defaultPanelLayout,
   movePanelInLayout,
@@ -15,7 +16,7 @@ export function usePanelLayout() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+      appStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
       setStorageError(false);
     } catch {
       setStorageError(true);

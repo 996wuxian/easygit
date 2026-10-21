@@ -1,6 +1,8 @@
 import { StrictMode, Component, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { isDesktop } from './services/git';
+import { flushStorage, initializeStorage, STORAGE_ERROR_EVENT } from './services/storage';
 import './App.css';
 
 const started = performance.now();
@@ -25,4 +27,33 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><ErrorBoundary><App onReady={finishBoot} /></ErrorBoundary></StrictMode>);
+const root = createRoot(document.getElementById('root')!);
+
+async function startApp() {
+  try {
+    await initializeStorage();
+    if (isDesktop()) {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      let closing = false;
+      await win.onCloseRequested(async event => {
+        event.preventDefault();
+        if (closing) return;
+        closing = true;
+        try {
+          await flushStorage();
+          await win.destroy();
+        } catch (error) {
+          closing = false;
+          window.dispatchEvent(new CustomEvent(STORAGE_ERROR_EVENT, { detail: `数据尚未保存，暂未关闭窗口：${String(error)}` }));
+        }
+      });
+    }
+    root.render(<StrictMode><ErrorBoundary><App onReady={finishBoot} /></ErrorBoundary></StrictMode>);
+  } catch (error) {
+    root.render(<main className="fatal-state"><h1>本地数据暂时无法加载</h1><p>{String(error)}</p><button className="primary-button" onClick={() => location.reload()}>重新加载</button></main>);
+    finishBoot();
+  }
+}
+
+void startApp();

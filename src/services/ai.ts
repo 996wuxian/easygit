@@ -1,4 +1,5 @@
 import { invokeCommand } from './git';
+import { flushStorage } from './storage';
 
 export interface AiCommitSettings {
   baseUrl: string;
@@ -7,8 +8,8 @@ export interface AiCommitSettings {
 }
 
 export async function generateCommitMessage(settings: AiCommitSettings, diff: string): Promise<string> {
+  await flushStorage();
   return invokeCommand<string>('generate_commit_message', {
-    apiKey: settings.apiKey,
     baseUrl: settings.baseUrl,
     model: settings.model,
     diff,

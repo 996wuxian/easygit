@@ -1,3 +1,5 @@
+import { appStorage } from '../services/storage';
+
 export const PANEL_IDS = ["changes", "diff", "branches", "commits", "stash", "activity"] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 
@@ -32,7 +34,7 @@ export function normalizePanelLayout(value: unknown): PanelLayout {
 
 export function readPanelLayout(storage?: Pick<Storage, "getItem">): PanelLayout {
   try {
-    const source = storage ?? (typeof window !== "undefined" ? window.localStorage : undefined);
+    const source = storage ?? (typeof window !== "undefined" ? appStorage : undefined);
     const raw = source?.getItem(PANEL_LAYOUT_STORAGE_KEY);
     return raw ? normalizePanelLayout(JSON.parse(raw)) : defaultPanelLayout();
   } catch {

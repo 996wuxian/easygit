@@ -7,28 +7,38 @@ import { WindowControls } from './components/WindowControls';
 import { Dialog } from './components/Dialog';
 import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
+import { DataStorageDialog } from './components/DataStorageDialog';
 import { git, isDesktop, type GitCommit } from './services/git';
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { useRepository, type RecentRepository } from './services/useRepository';
+import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
 
-type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'branches' | null;
+type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'branches' | null;
 type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
-const AI_SETTINGS_KEY = 'easygit.ai-commit-settings.v1';
 const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
-function readSidebarOrder(): string[] { try { const value: unknown = JSON.parse(localStorage.getItem(SIDEBAR_ORDER_KEY) ?? '[]'); return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []; } catch { return []; } }
-function readTheme(): 'light' | 'dark' { try { return localStorage.getItem('esaygit.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }
+function readSidebarOrder(): string[] { try { const value: unknown = JSON.parse(appStorage.getItem(SIDEBAR_ORDER_KEY) ?? '[]'); return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []; } catch { return []; } }
+function readTheme(): 'light' | 'dark' { try { return appStorage.getItem('esaygit.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }
 function readAiSettings(): AiCommitSettings {
+  const apiKey = readAiApiKey();
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY) ?? 'null');
-    if (!value || typeof value !== 'object') return DEFAULT_AI_SETTINGS;
+    const value: unknown = JSON.parse(appStorage.getItem(AI_SETTINGS_KEY) ?? 'null');
+    if (!value || typeof value !== 'object') return { ...DEFAULT_AI_SETTINGS, apiKey };
     const saved = value as Partial<AiCommitSettings>;
     return {
       baseUrl: typeof saved.baseUrl === 'string' ? saved.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
       model: typeof saved.model === 'string' ? saved.model : DEFAULT_AI_SETTINGS.model,
-      apiKey: typeof saved.apiKey === 'string' ? saved.apiKey : '',
+      apiKey,
     };
-  } catch { return DEFAULT_AI_SETTINGS; }
+  } catch { return { ...DEFAULT_AI_SETTINGS, apiKey }; }
+}
+function readCommitDrafts(): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(appStorage.getItem(COMMIT_DRAFTS_KEY) ?? '{}');
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+      : {};
+  } catch { return {}; }
 }
 
 export default function App({ onReady }: { onReady: () => void }) {
@@ -43,7 +53,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [selected, setSelected] = useState<string | null>(snapshot.files[0]?.path ?? null);
   const [staged, setStaged] = useState(false);
   const [query, setQuery] = useState('');
-  const [commitDrafts, setCommitDrafts] = useState<Record<string, string>>({});
+  const [commitDrafts, setCommitDrafts] = useState(readCommitDrafts);
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
   const [activeNav, setActiveNav] = useState('workspace');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
@@ -74,7 +84,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       if (fromIndex < 0 || toIndex < 0) return current;
       const [moved] = order.splice(fromIndex, 1);
       order.splice(toIndex, 0, moved);
-      try { localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(order)); } catch { /* optional preference */ }
+      try { appStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(order)); } catch { /* optional preference */ }
       return order;
     });
   }, [workspaces]);
@@ -120,7 +130,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       const paths = workspaces.map(item => item.path);
       const next = [...current.filter(path => paths.includes(path)), ...paths.filter(path => !current.includes(path))];
       if (next.length === current.length && next.every((path, index) => path === current[index])) return current;
-      try { localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(next)); } catch { /* optional preference */ }
+      try { appStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(next)); } catch { /* optional preference */ }
       return next;
     });
   }, [workspaces]);
@@ -250,12 +260,26 @@ export default function App({ onReady }: { onReady: () => void }) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-    try { localStorage.setItem('esaygit.theme', theme); } catch { /* optional preference */ }
+    try { appStorage.setItem('esaygit.theme', theme); } catch { /* optional preference */ }
   }, [theme]);
 
   useEffect(() => {
-    try { localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(aiSettings)); } catch { /* optional preference */ }
-  }, [aiSettings]);
+    try {
+      appStorage.setItem(AI_SETTINGS_KEY, JSON.stringify({ baseUrl: aiSettings.baseUrl, model: aiSettings.model }));
+      void saveAiApiKey(aiSettings.apiKey).catch(error => notify(`密钥保存失败：${String(error)}`, true));
+    } catch (error) { notify(`AI 设置保存失败：${String(error)}`, true); }
+  }, [aiSettings, notify]);
+
+  useEffect(() => {
+    try { appStorage.setItem(COMMIT_DRAFTS_KEY, JSON.stringify(commitDrafts)); }
+    catch (error) { notify(`提交草稿保存失败：${String(error)}`, true); }
+  }, [commitDrafts, notify]);
+
+  useEffect(() => {
+    const onStorageError = (event: Event) => notify(String((event as CustomEvent<unknown>).detail), true);
+    window.addEventListener(STORAGE_ERROR_EVENT, onStorageError);
+    return () => window.removeEventListener(STORAGE_ERROR_EVENT, onStorageError);
+  }, [notify]);
 
   useEffect(() => {
     const current = snapshot.files.find(f => f.path === selected);
@@ -399,10 +423,16 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'branches' && <Dialog title="切换分支" onClose={closeModal}><p className="dialog-description">当前分支：<code>{snapshot.branch}</code></p><BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name).then(ok => { if (ok) closeModal(); }); }} /></Dialog>}
 
-    {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}><div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div><button className="settings-link" onClick={() => setModal('ai-settings')}><IconKey size={19} /><span><strong>AI 提交信息</strong><small>{aiSettings.apiKey ? '已配置第三方 AI 服务' : '配置 API Key，按差异生成提交信息'}</small></span><IconChevronRight size={17} /></button><button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button><div className="about-app"><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>0.1.0</span></strong><p>本地 Git 客户端。</p></div><span>Tauri + React</span></div></Dialog>}
+    {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}>
+      <div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div>
+      <button className="settings-link" onClick={() => setModal('ai-settings')}><IconKey size={19} /><span><strong>AI 提交信息</strong><small>{aiSettings.apiKey ? '已配置第三方 AI 服务' : '配置 API Key，按差异生成提交信息'}</small></span><IconChevronRight size={17} /></button>
+      <button className="settings-link" onClick={() => setModal('data-settings')}><IconFolder size={19} /><span><strong>数据存储</strong><small>查看、打开或迁移本机数据目录</small></span><IconChevronRight size={17} /></button>
+      <button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button>
+      <div className="about-app"><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>0.1.0</span></strong><p>本地 Git 客户端。</p></div><span>Tauri + React</span></div>
+    </Dialog>}
 
     {modal === 'ai-settings' && <Dialog title="AI 提交信息" onClose={closeModal}>
-      <p className="dialog-description">配置兼容 OpenAI Chat Completions 的第三方服务。默认使用 DeepSeek；提交信息会按规范生成，例如 <code>feat: 添加功能</code>、<code>docs: 更新说明</code>。设置会保存在本机应用配置中。</p>
+      <p className="dialog-description">配置兼容 OpenAI Chat Completions 的第三方服务。默认使用 DeepSeek；提交信息会按规范生成，例如 <code>feat: 添加功能</code>、<code>docs: 更新说明</code>。设置保存在本机数据目录，API Key 由 Windows 系统加密保存。</p>
       <div className="ai-settings-form">
         <label className="field-label" htmlFor="ai-base-url">API 地址</label>
         <input id="ai-base-url" className="text-field mono" value={aiSettings.baseUrl} placeholder="https://api.deepseek.com" spellCheck={false} onChange={event => setAiSettings(current => ({ ...current, baseUrl: event.target.value }))} />
@@ -414,6 +444,8 @@ export default function App({ onReady }: { onReady: () => void }) {
       <p className="ai-settings-notice">点击生成时，当前仓库的已暂存差异会发送到上述服务以生成提交信息。</p>
       <div className="dialog-action-row"><button className="text-button" onClick={() => setAiSettings(DEFAULT_AI_SETTINGS)}>恢复 DeepSeek 默认值</button><button className="primary-button" onClick={closeModal}><IconCheck size={16} />完成</button></div>
     </Dialog>}
+
+    {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
 
     {selectedCommit && <Dialog title="提交详情" onClose={() => setSelectedCommit(null)}><div className="commit-detail"><IconGitCommit size={32} stroke={1.5} /><h3>{selectedCommit.subject}</h3><p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div></Dialog>}
 

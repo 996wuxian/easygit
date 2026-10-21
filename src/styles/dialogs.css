@@ -93,6 +93,12 @@
 .ai-settings-form .text-field { background: var(--bg-card); }
 .ai-settings-form .text-field:focus { outline: 0; border-color: var(--text-dim); box-shadow: none; }
 .ai-settings-notice { margin: 15px 0 0; padding: 10px 11px; border-radius: 7px; background: var(--bg-soft); color: var(--text-muted); font-size: 11px; line-height: 1.7; }
+.storage-directory-row { display: flex; align-items: stretch; gap: 8px; }
+.storage-directory-row > input { flex: 1; min-width: 0; }
+.storage-directory-row > button { flex-shrink: 0; }
+.storage-migration-form { margin-top: 22px; }
+.storage-migration-form .field-help { line-height: 1.7; }
+.storage-settings-error { color: var(--danger); font-size: 12px; line-height: 1.7; }
 .about-app { display: flex; align-items: center; gap: 10px; padding-top: 19px; }
 .about-app > img { width: 33px; height: 33px; border-radius: 9px; }
 .about-app strong { font-size: 13px; font-weight: 600; }
