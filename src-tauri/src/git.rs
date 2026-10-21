@@ -1,4 +1,6 @@
 use serde::Serialize;
+mod comparison;
+pub use comparison::{read_file_comparison, FileComparison};
 use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},
@@ -612,7 +614,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn repo() -> TempDir {
+    pub(super) fn repo() -> TempDir {
         let directory = tempfile::tempdir().unwrap();
         run(directory.path(), &["init", "-b", "main"]).unwrap();
         run(directory.path(), &["config", "user.name", "esaygit test"]).unwrap();

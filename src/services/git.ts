@@ -27,6 +27,13 @@ export interface RepositorySnapshot {
   operation: string | null;
 }
 export interface BootstrapResult { gitAvailable: boolean; gitVersion: string | null; error: string | null }
+export interface FileComparison {
+  diff: string;
+  unchanged: string | null;
+  binary: boolean;
+  originalExists: boolean;
+  modifiedExists: boolean;
+}
 export function emptyRepository(): RepositorySnapshot {
   return { path: '', name: '', branch: '', head: null, gitVersion: '', files: [], branches: [], commits: [], stashCount: 0, remote: null, hasUpstream: false, ahead: 0, behind: 0, operation: null };
 }
@@ -42,6 +49,7 @@ export const git = {
   bootstrap: () => invokeCommand<BootstrapResult>('bootstrap'),
   open: (path: string) => invokeCommand<RepositorySnapshot>('open_repository', { path }),
   diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
+  comparison: (path: string, file: string, staged: boolean) => invokeCommand<FileComparison>('read_file_comparison', { path, file, staged }),
   stagedDiff: (path: string) => invokeCommand<string>('read_staged_diff', { path }),
   stage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('stage_files', { path, files }),
   unstage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('unstage_files', { path, files }),

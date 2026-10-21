@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconCopy, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTextWrap, IconTrash, IconX } from '@tabler/icons-react';
+import { useState } from 'react';
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCheck, IconChevronRight, IconCircleCheck, IconCode, IconFile, IconFileCode, IconGitBranch, IconGitCommit, IconInbox, IconLoader2, IconMinus, IconPlus, IconSearch, IconSparkles, IconStack2, IconTrash, IconX } from '@tabler/icons-react';
 import type { GitCommit, GitFile, RepositorySnapshot } from '../services/git';
 import type { Activity } from '../services/useRepository';
-import { git } from '../services/git';
 import './panels.css';
 
 export function ChangesPanel({ snapshot, message, onMessageChange, selected, onSelect, onStage, onUnstage, onDiscard, onCommit, canPush, pushTitle, onPush, onGenerateCommitMessage, generatingCommitMessage, busy }: {
@@ -50,65 +49,7 @@ export function ChangesPanel({ snapshot, message, onMessageChange, selected, onS
   </div>;
 }
 
-function Syntax({ text }: { text: string }) {
-  return <>{text.split(/('[^']*'|"[^"]*"|\b(?:import|from|export|function|return|const|let|type|interface|async|await)\b)/g).map((token, i) => <span key={i} className={/^['"]/.test(token) ? 'syntax-string' : /^(import|from|export|function|return|const|let|type|interface|async|await)$/.test(token) ? 'syntax-keyword' : ''}>{token}</span>)}</>;
-}
-
-type DiffState =
-  | { key: string; status: 'loading' }
-  | { key: string; status: 'ready' | 'refreshing'; diff: string }
-  | { key: string; status: 'error'; error: string };
-
-export function DiffPanel({ snapshot, selected, staged, onStagedChange, notify }: {
-  snapshot: RepositorySnapshot; selected: string | null; staged: boolean; onStagedChange: (value: boolean) => void; notify: (message: string, error?: boolean) => void;
-}) {
-  const [result, setResult] = useState<DiffState | null>(null);
-  const [wrap, setWrap] = useState(false);
-  const requestKey = JSON.stringify([snapshot.path, selected, staged]);
-  useEffect(() => {
-    let cancelled = false;
-    if (!snapshot.path || !selected) { setResult(null); return; }
-    // Refresh the same view in place, including a successfully loaded empty diff.
-    setResult(current => current?.key === requestKey && 'diff' in current
-      ? { key: requestKey, status: 'refreshing', diff: current.diff }
-      : { key: requestKey, status: 'loading' });
-    void git.diff(snapshot.path, selected, staged).then(diff => {
-      if (!cancelled) setResult({ key: requestKey, status: 'ready', diff });
-    }).catch(error => {
-      if (!cancelled) setResult({ key: requestKey, status: 'error', error: String(error) });
-    });
-    return () => { cancelled = true; };
-  }, [snapshot, selected, staged, requestKey]);
-  // Never render a previous file, repository, or staging area's result under a new heading.
-  const current = result?.key === requestKey ? result : null;
-  const diff = current && 'diff' in current ? current.diff : '';
-  const loading = Boolean(snapshot.path && selected && (!current || current.status === 'loading' || current.status === 'refreshing'));
-  const showLoading = loading && (!current || current.status === 'loading');
-  const error = current?.status === 'error' ? current.error : '';
-  const lines = diff.split('\n');
-  const combined = /^diff --(?:cc|combined) /m.test(diff) || /^@@@ /m.test(diff);
-  const added = lines.filter(line => line.startsWith('+') && !line.startsWith('+++')).length;
-  const removed = lines.filter(line => line.startsWith('-') && !line.startsWith('---')).length;
-  let oldLine = 0;
-  let newLine = 0;
-  const display = lines.filter(line => !/^(diff --git|index |--- |\+\+\+ )/.test(line));
-  return <div className="diff-content">
-    <div className="diff-toolbar"><div className="segmented"><button className={!staged ? 'active' : ''} onClick={() => onStagedChange(false)}>工作区</button><button className={staged ? 'active' : ''} onClick={() => onStagedChange(true)}>暂存区</button></div><div className="diff-tools">{!combined && <><span className="diff-add">+{added}</span><span className="diff-remove">−{removed}</span></>}<i /><button className={`icon-button ${wrap ? 'active' : ''}`} aria-label="切换代码自动换行" title="自动换行" onClick={() => setWrap(v => !v)}><IconTextWrap size={16} /></button><button className="icon-button" disabled={!diff} title="复制 diff" aria-label="复制 diff" onClick={() => { void navigator.clipboard.writeText(diff).then(() => notify('Diff 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div></div>
-    <div className="diff-file-path"><IconFileCode size={14} /><span>{selected ?? '选择一个文件以查看更改'}</span><span className="language-tag">{selected?.split('.').pop()?.toUpperCase() ?? 'DIFF'}</span></div>
-    <div className={`code-scroll ${wrap ? 'wrap-code' : ''}`} aria-label="文件差异" aria-busy={loading}>
-      {showLoading ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取差异…</span></div> : error ? <div className="diff-empty"><IconX size={24} /><span>{error}</span></div> : !selected || !diff ? <div className="diff-empty"><IconCode size={30} stroke={1.3} /><strong>{selected ? '没有差异' : '选择一个文件'}</strong><span>{selected ? '可切换到工作区或暂存区查看。' : '从左侧文件列表查看更改。'}</span></div> : combined ? <div className="conflict-diff"><div className="conflict-diff-note">文件存在合并冲突。以下为原始差异，请在编辑器中解决冲突。</div><pre>{diff}</pre></div> : <div className="code-lines">{display.map((line, index) => {
-        const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-        if (hunk) { oldLine = Number(hunk[1]); newLine = Number(hunk[2]); return <div className="code-hunk" key={index}><span>···</span><span>···</span><code>{line}</code></div>; }
-        const type = line.startsWith('+') ? 'added' : line.startsWith('-') ? 'removed' : 'context';
-        const special = line.startsWith('\\') || !oldLine && !newLine;
-        const old = type !== 'added' && !special ? oldLine++ : '';
-        const next = type !== 'removed' && !special ? newLine++ : '';
-        return <div className={`code-line ${type}`} key={index}><span className="line-number">{old}</span><span className="line-number">{next}</span><span className="line-sign">{type === 'added' ? '+' : type === 'removed' ? '−' : ' '}</span><code><Syntax text={line.startsWith(' ') || type !== 'context' ? line.slice(1) : line} /></code></div>;
-      })}</div>}
-    </div>
-    <div className="diff-footer"><span><span className="tiny-dot" />{staged ? '已暂存的更改' : '未暂存的更改'}</span><span>UTF-8 <i /> {combined ? '冲突原始差异' : '统一视图'}</span></div>
-  </div>;
-}
+export { DiffPanel } from './diff/DiffPanel';
 
 export function BranchesPanel({ snapshot, busy, onCheckout }: { snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string) => void }) {
   const branches = snapshot.branches.filter(b => !b.remote);

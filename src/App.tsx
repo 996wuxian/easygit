@@ -290,13 +290,17 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     if (!repo.notice) return;
-    const timeout = window.setTimeout(() => repo.setNotice(null), repo.notice.error ? 20000 : 10000);
+    const timeout = window.setTimeout(() => repo.setNotice(null), 5000);
     return () => clearTimeout(timeout);
   }, [repo.notice, repo.setNotice]);
 
   const focusPanel = (id: PanelId) => {
     if (!hasRepository) { setModal('open'); return; }
-    if (panels.layout.hidden.includes(id)) panels.togglePanel(id);
+    if (panels.layout.hidden.includes(id)) {
+      setModal('layout');
+      notify(`请在自定义布局中勾选「${PANEL_TITLES[id]}」面板。`);
+      return;
+    }
     setActiveNav(id === 'commits' ? 'commits' : id === 'branches' ? 'branches' : id === 'activity' ? 'activity' : 'workspace');
     window.setTimeout(() => {
       const node = document.querySelector<HTMLElement>(`[data-eg-panel="${id}"]`);
@@ -337,7 +341,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const renderPanel = (id: PanelId) => {
     switch (id) {
       case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onCommit={repo.commit} />;
-      case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} notify={notify} />;
+      case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} />;
       case 'branches': return <BranchesPanel snapshot={snapshot} busy={busy} onCheckout={name => { void repo.checkout(name); }} />;
       case 'commits': return <CommitsPanel snapshot={snapshot} onSelect={setSelectedCommit} />;
       case 'stash': return <StashPanel count={snapshot.stashCount} />;
@@ -403,7 +407,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
         <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button><span className="toolbar-divider" /><button className="text-button" disabled={busy || !snapshot.remote} title={snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}><IconArrowDown size={14} />获取更新</button></div></div>
 
-        <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">最近 {Math.min(snapshot.commits.length, 5)} 次</span>}<button className="panel-hide-button" aria-label={`隐藏${PANEL_TITLES[id]}`} title="隐藏面板" disabled={panels.visiblePanels.length === 1} onClick={() => panels.togglePanel(id)}><IconX size={13} /></button></>} />
+        <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">最近 {Math.min(snapshot.commits.length, 5)} 次</span>}</>} />
 
         <div className="workspace-footer"><span>{repo.gitVersion || snapshot.gitVersion}</span><span>拖动 <span className="footer-grip">⠿</span> 调整面板<span className="footer-divider">·</span><kbd>Ctrl K</kbd> 命令</span></div>
       </div> : <section className="repository-empty" aria-label="尚未打开仓库">

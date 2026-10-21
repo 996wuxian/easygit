@@ -167,9 +167,6 @@ code, .mono { font-family: var(--mono); }
 .toolbar-divider { width: 1px; height: 12px; background: var(--border); }
 .panel-count { padding: 2px 5px; background: var(--bg-soft); color: var(--text-muted); min-width: 20px; border-radius: 4px; text-align: center; font: 10px var(--mono); }
 .panel-subtitle { font-size: 10px; color: var(--text-dim); margin-right: 3px; }
-.panel-hide-button { display: grid; place-items: center; width: 20px; height: 24px; padding: 0; border-radius: 4px; color: var(--text-dim); opacity: 0; }
-.eg-panel:hover .panel-hide-button, .panel-hide-button:focus-visible { opacity: 1; }
-.panel-hide-button:hover { color: var(--text); background: var(--bg-soft); }
 .eg-panel--changes .eg-panel-content, .eg-panel--diff .eg-panel-content { height: 320px; }
 .eg-panel--branches .eg-panel-content, .eg-panel--commits .eg-panel-content, .eg-panel--stash .eg-panel-content { height: 180px; overflow: auto; }
 .eg-panel--activity .eg-panel-content { max-height: 240px; overflow: auto; }
