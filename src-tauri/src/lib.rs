@@ -71,5 +71,5 @@ pub fn run() {
             fetch_repository
         ])
         .run(tauri::generate_context!())
-        .expect("无法启动 esaygit");
+        .expect("无法启动 easygit");
 }

@@ -32,7 +32,7 @@ export function emptyRepository(): RepositorySnapshot {
 export const isDesktop = () => '__TAURI_INTERNALS__' in window;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isDesktop()) throw new Error('请在 esaygit 桌面应用中打开本地仓库。');
+  if (!isDesktop()) throw new Error('请在 easygit 桌面应用中打开本地仓库。');
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
 }

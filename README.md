@@ -1,4 +1,4 @@
-# esaygit
+# easygit
 
 你的 Git，你的工作空间。参考 doTime 的 **Tauri 2 + React 19 + TypeScript + Vite + Tabler Icons** 骨架，为桌面 Git 工作流提供可以自由组合的面板。
 

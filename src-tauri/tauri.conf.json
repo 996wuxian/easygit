@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "esaygit",
+  "productName": "easygit",
   "version": "0.1.0",
   "identifier": "dev.esaygit.desktop",
   "build": {
@@ -12,9 +12,9 @@
   "app": {
     "windows": [{
       "label": "main",
-      "title": "esaygit",
-      "width": 1440,
-      "height": 940,
+      "title": "easygit",
+      "width": 1200,
+      "height": 800,
       "minWidth": 1100,
       "minHeight": 720,
       "resizable": true,

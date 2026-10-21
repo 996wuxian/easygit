@@ -131,7 +131,7 @@ export function useRepository(onReady: () => void) {
       remember(next);
       return next;
     });
-    notify(`已从 esaygit 移除 ${workspace.name}，本地项目文件已保留`);
+    notify(`已从 easygit 移除 ${workspace.name}，本地项目文件已保留`);
     return true;
   }, [notify]);
 

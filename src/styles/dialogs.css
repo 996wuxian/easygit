@@ -5,7 +5,11 @@
 .dialog-description { color: var(--text-muted); font-size: 11px; line-height: 1.9; margin: 0 0 18px; }
 .dialog-description code { font-size: 11px; color: var(--primary); }
 .open-repo-intro { display: flex; align-items: center; gap: 15px; padding: 16px 0 24px; }
-.dialog-feature-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 13px; background: var(--primary-soft); color: var(--primary); }
+.dialog-feature-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 13px; background: var(--action); color: var(--action-text); }
+.dialog-backdrop:has(.open-repo-dialog) { background: #00000045; }
+.open-repo-dialog { box-shadow: 0 24px 90px #0000002a; }
+.open-repo-dialog button:focus-visible { outline-color: var(--text-muted); }
+.open-repo-dialog .text-field:focus { border-color: var(--text-muted); outline: none; box-shadow: 0 0 0 2px var(--border); }
 .open-repo-intro p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.9; }
 .open-repo-intro strong { color: var(--text); font-weight: 500; }
 .field-label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 11px; }

@@ -1,11 +1,11 @@
 [package]
-name = "esaygit"
+name = "easygit"
 version = "0.1.0"
 description = "A customizable Git workspace"
 edition = "2021"
 
 [lib]
-name = "esaygit_lib"
+name = "easygit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

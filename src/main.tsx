@@ -17,7 +17,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('esaygit failed to render', error, info);
+    console.error('easygit failed to render', error, info);
     finishBoot();
   }
   render() {
