@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
+import { formatPullError } from './gitErrors';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean }
@@ -221,7 +222,7 @@ export function useRepository(onReady: () => void) {
     };
   }, [hasRepository, snapshot.path, refresh]);
 
-  const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>) => {
+  const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>, formatError: (error: unknown) => string = String) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
     busyRef.current = true;
     setBusy(true);
@@ -235,7 +236,7 @@ export function useRepository(onReady: () => void) {
       const result = typeof label === 'string' ? { message: label } : label(next);
       notify(result.message, result.error ?? false);
       return true;
-    } catch (error) { notify(String(error), true); return false; }
+    } catch (error) { notify(formatError(error), true); return false; }
     finally { busyRef.current = false; setBusy(false); }
   }, [notify]);
 
@@ -266,7 +267,7 @@ export function useRepository(onReady: () => void) {
     let conflicted = false;
     let pullError: string | null = null;
     return run(next => pullError
-      ? { message: conflicted ? '拉取遇到冲突，请在工作区变更中解决冲突并提交完成合并' : `拉取失败：${pullError}`, error: true }
+      ? { message: conflicted ? '拉取遇到冲突，请在工作区变更中解决冲突并提交完成合并' : formatPullError(pullError), error: true }
       : conflicted || next.operation === 'merge' || next.files.some(file => file.conflicted)
         ? { message: '拉取遇到冲突，请在工作区变更中解决冲突并提交完成合并', error: true }
         : { message: '拉取更新完成' }, async path => {
@@ -274,7 +275,7 @@ export function useRepository(onReady: () => void) {
       conflicted = result.conflicted;
       pullError = result.error;
       return result.snapshot;
-    });
+    }, formatPullError);
   };
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
   const merge = useCallback(async (preview: MergePreview) => {
