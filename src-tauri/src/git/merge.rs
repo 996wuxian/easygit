@@ -87,7 +87,7 @@ pub(super) fn preview_branch_merge(
     )?;
     let fields: Vec<&[u8]> = log.split(|byte| *byte == 0).collect();
     let mut commits = Vec::new();
-    for fields in fields.chunks_exact(6) {
+    for fields in fields.as_chunks::<6>().0 {
         let text = |index: usize| String::from_utf8_lossy(fields[index]).into_owned();
         commits.push(GitCommit {
             hash: text(0),

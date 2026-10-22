@@ -117,7 +117,9 @@ pub fn history_page(path: &str, query: HistoryQuery) -> Result<HistoryPage, Stri
         let bytes = run(root, &args)?;
         let fields: Vec<_> = bytes.split(|byte| *byte == 0).collect();
         let mut commits: Vec<GitCommit> = fields
-            .chunks_exact(6)
+            .as_chunks::<6>()
+            .0
+            .iter()
             .map(|fields| {
                 let text = |i| String::from_utf8_lossy(fields[i]).into_owned();
                 GitCommit {
@@ -224,7 +226,9 @@ pub(super) fn read_history(
         .into_iter()
         .collect();
     fields
-        .chunks_exact(6)
+        .as_chunks::<6>()
+        .0
+        .iter()
         .map(|fields| {
             let text = |index: usize| String::from_utf8_lossy(fields[index]).into_owned();
             let hash = text(0);

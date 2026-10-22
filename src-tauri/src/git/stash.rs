@@ -27,7 +27,9 @@ fn entries(root: &Path) -> Result<Vec<StashEntry>, String> {
     Ok(bytes
         .split(|byte| *byte == 0)
         .collect::<Vec<_>>()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|fields| {
             let text = |i| String::from_utf8_lossy(fields[i]).into_owned();
             StashEntry {
