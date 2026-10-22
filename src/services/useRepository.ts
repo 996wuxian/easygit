@@ -5,6 +5,7 @@ import { appStorage } from './storage';
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean }
 interface RemoteRequest { path: string; session: number; reading: boolean; promise: Promise<boolean>; complete: (updated: boolean) => void }
+interface RefreshRequest { path: string; token: number; promise: Promise<boolean>; notified: boolean; force: boolean }
 const RECENTS_KEY = 'esaygit.recent.v1';
 function loadRecents(): RecentRepository[] {
   try {
@@ -26,7 +27,7 @@ export function useRepository(onReady: () => void) {
   const snapshotRef = useRef(snapshot);
   const generation = useRef(0);
   const busyRef = useRef(false);
-  const refreshRequest = useRef<{ path: string; token: number; promise: Promise<boolean>; notified: boolean } | null>(null);
+  const refreshRequest = useRef<RefreshRequest | null>(null);
   const session = useRef(0);
   const remoteRequest = useRef<RemoteRequest | null>(null);
   const [remoteSync, setRemoteSync] = useState<{ request: RemoteRequest; fetched: boolean } | null>(null);
@@ -119,13 +120,17 @@ export function useRepository(onReady: () => void) {
     if (!request || request.path !== path || request.token !== token) {
       const promise = git.open(path).then(next => {
         if (token !== generation.current || busyRef.current) return false;
+        // Keep object identity on unchanged quiet reads, avoiding downstream
+        // diff/script reads and renders. Explicit refresh always reloads.
+        if (!request?.force && next.revision && next.path === snapshotRef.current.path && next.revision === snapshotRef.current.revision) return true;
         snapshotRef.current = next;
         setSnapshot(next);
         return true;
       });
-      request = { path, token, promise, notified: false };
+      request = { path, token, promise, notified: false, force: !quiet };
       refreshRequest.current = request;
     }
+    if (!quiet) request.force = true;
     try {
       const updated = await request.promise;
       if (updated && token === generation.current && !busyRef.current && !quiet && !request.notified) {
@@ -173,11 +178,48 @@ export function useRepository(onReady: () => void) {
 
   useEffect(() => {
     if (!hasRepository) return;
-    const id = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(true); }, 8000);
-    const focus = () => { void refresh(true); };
+    let focused = document.hasFocus();
+    let disposed = false;
+    let reading = false;
+    let delay = 8000;
+    let timer: number | undefined;
+    const active = () => !disposed && focused && document.visibilityState === 'visible';
+    const stop = () => { window.clearTimeout(timer); timer = undefined; };
+    const schedule = () => {
+      stop();
+      if (active()) timer = window.setTimeout(() => { void poll(); }, delay);
+    };
+    const poll = async (reset = false) => {
+      if (!active() || reading) return;
+      reading = true;
+      const previous = snapshotRef.current;
+      try {
+        const updated = await refresh(true);
+        delay = !reset && updated && previous.revision && previous === snapshotRef.current
+          ? Math.min(delay * 2, 30000) : 8000;
+      } finally {
+        reading = false;
+        schedule();
+      }
+    };
+    const focus = () => { focused = true; delay = 8000; stop(); void poll(true); };
+    const blur = () => { focused = false; stop(); };
+    const visibility = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) focus();
+      else blur();
+    };
+    schedule();
     window.addEventListener('focus', focus);
-    return () => { clearInterval(id); window.removeEventListener('focus', focus); };
-  }, [hasRepository, refresh]);
+    window.addEventListener('blur', blur);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      disposed = true;
+      stop();
+      window.removeEventListener('focus', focus);
+      window.removeEventListener('blur', blur);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [hasRepository, snapshot.path, refresh]);
 
   const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>) => {
     if (busyRef.current || !snapshotRef.current.path) return false;

@@ -1,17 +1,5 @@
-use super::{output, run, GitCommit, GitCommitRef, GitUpstream};
-use std::path::Path;
-
-fn is_ancestor(root: &Path, ancestor: &str, tip: &str) -> Result<bool, String> {
-    if ancestor == tip {
-        return Ok(true);
-    }
-    let result = output(Some(root), &["merge-base", "--is-ancestor", ancestor, tip])?;
-    match result.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(super::error_text(&result)),
-    }
-}
+use super::{run, GitCommit, GitCommitRef, GitUpstream};
+use std::{collections::HashSet, path::Path};
 
 pub(super) fn read_history(
     root: &Path,
@@ -36,16 +24,28 @@ pub(super) fn read_history(
     args.push("--");
     let log = run(root, &args)?;
     let fields: Vec<&[u8]> = log.split(|byte| *byte == 0).collect();
+    let mut local_ancestors = HashSet::from([head.to_owned()]);
+    let mut remote_ancestors: HashSet<String> = upstream
+        .map(|upstream| upstream.hash.clone())
+        .into_iter()
+        .collect();
     fields
         .chunks_exact(6)
         .map(|fields| {
             let text = |index: usize| String::from_utf8_lossy(fields[index]).into_owned();
             let hash = text(0);
-            let local = upstream.is_none() || is_ancestor(root, &hash, head)?;
-            let remote = match upstream {
-                Some(upstream) => is_ancestor(root, &hash, &upstream.hash)?,
-                None => false,
-            };
+            let parents: Vec<String> = text(5).split_whitespace().map(str::to_owned).collect();
+            // --topo-order visits every child before its parents. Propagate
+            // reachability from both tips through this already bounded log;
+            // no per-commit Git processes or persistent history cache needed.
+            let local = local_ancestors.remove(&hash);
+            let remote = remote_ancestors.remove(&hash);
+            if local {
+                local_ancestors.extend(parents.iter().cloned());
+            }
+            if remote {
+                remote_ancestors.extend(parents.iter().cloned());
+            }
             let mut refs = Vec::new();
             if hash == head {
                 refs.push(GitCommitRef {
@@ -69,7 +69,7 @@ pub(super) fn read_history(
                 subject: text(2),
                 author: text(3),
                 date: text(4),
-                parents: text(5).split_whitespace().map(str::to_owned).collect(),
+                parents,
                 refs,
                 local,
                 remote,
@@ -81,7 +81,7 @@ pub(super) fn read_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::{open_repository, run_text, tests::repo};
+    use crate::git::{command, open_repository, run_text, tests::repo};
 
     fn commit(root: &Path, message: &str) -> String {
         run(root, &["commit", "--allow-empty", "-m", message]).unwrap();
@@ -167,5 +167,69 @@ mod tests {
             .commits
             .iter()
             .all(|commit| commit.local && commit.remote));
+    }
+
+    #[test]
+    fn bulk_reachability_matches_git_with_merges_truncation_and_skewed_dates() {
+        let directory = repo();
+        let root = directory.path();
+        let base = commit(root, "base");
+        run(root, &["branch", "remote-side"]).unwrap();
+        for index in 0..3 {
+            commit(root, &format!("local {index}"));
+        }
+        let local = run_text(root, &["rev-parse", "HEAD"]).unwrap();
+        run(root, &["checkout", "remote-side"]).unwrap();
+        for index in 0..12 {
+            let result = command(Some(root))
+                .args(["commit", "--allow-empty", "-m", &format!("remote {index}")])
+                .env("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z")
+                .env("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z")
+                .output()
+                .unwrap();
+            assert!(result.status.success());
+        }
+        let remote = run_text(root, &["rev-parse", "HEAD"]).unwrap();
+
+        let check = |head: &str, remote: &str| {
+            let upstream = GitUpstream {
+                name: "origin/main".into(),
+                hash: remote.into(),
+            };
+            super::super::GIT_COMMAND_COUNT.with(|count| count.set(0));
+            let commits = read_history(root, Some(head), "main", Some(&upstream)).unwrap();
+            super::super::GIT_COMMAND_COUNT.with(|count| assert_eq!(count.get(), 1));
+            assert_eq!(commits.len(), 10);
+            for commit in commits {
+                let reachable = |tip: &str| {
+                    super::super::output(
+                        Some(root),
+                        &["merge-base", "--is-ancestor", &commit.hash, tip],
+                    )
+                    .unwrap()
+                    .status
+                    .success()
+                };
+                assert_eq!(commit.local, reachable(head), "local {}", commit.subject);
+                assert_eq!(
+                    commit.remote,
+                    reachable(remote),
+                    "remote {}",
+                    commit.subject
+                );
+            }
+        };
+        check(&local, &remote);
+        check(&remote, &base);
+        check(&base, &remote);
+        check(&remote, &remote);
+        run(root, &["checkout", "main"]).unwrap();
+        run(
+            root,
+            &["merge", "--no-ff", "remote-side", "-m", "merge both sides"],
+        )
+        .unwrap();
+        let merged = run_text(root, &["rev-parse", "HEAD"]).unwrap();
+        check(&merged, &remote);
     }
 }

@@ -15,6 +15,7 @@ export interface GitCommit { hash: string; shortHash: string; subject: string; a
 export interface MergePreview { source: string; sourceRemote: boolean; target: string; targetRemote: boolean; sourceHead: string; targetHead: string; localTarget: string; localTargetHead: string | null; targetNeedsSync: boolean; commits: GitCommit[]; commitCount: number }
 export interface MergeResult { snapshot: RepositorySnapshot; merged: boolean; conflicted: boolean; error: string | null }
 export interface RepositorySnapshot {
+  revision?: string;
   path: string;
   name: string;
   branch: string;

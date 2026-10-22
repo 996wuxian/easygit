@@ -33,9 +33,94 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('仓库刷新协调', () => {
+  it('未变化的静默刷新保留快照，版本变化后发布新快照', async () => {
+    const first = { ...initial, revision: 'one' };
+    vi.mocked(git.open).mockResolvedValue(first);
+    await act(async () => { await repository.refresh(); });
+    vi.mocked(git.open).mockResolvedValue({ ...first });
+    await act(async () => { expect(await repository.refresh(true)).toBe(true); });
+    expect(repository.snapshot).toBe(first);
+    const changed = { ...first, revision: 'two' };
+    vi.mocked(git.open).mockResolvedValue(changed);
+    await act(async () => { await repository.refresh(true); });
+    expect(repository.snapshot).toBe(changed);
+  });
+
+  it('手动刷新加入静默读取时，即使版本未变也强制重新发布快照', async () => {
+    const first = { ...initial, revision: 'one' };
+    vi.mocked(git.open).mockResolvedValue(first);
+    await act(async () => { await repository.refresh(); });
+    const pending = deferred();
+    vi.mocked(git.open).mockReturnValueOnce(pending.promise);
+    let background!: Promise<boolean>;
+    let manual!: Promise<boolean>;
+    await act(async () => {
+      background = repository.refresh(true);
+      manual = repository.refresh();
+    });
+    const reread = { ...first };
+    await act(async () => { pending.resolve(reread); await Promise.all([background, manual]); });
+    expect(repository.snapshot).toBe(reread);
+  });
+
+  it('空闲时逐步降低轮询频率，失焦暂停，回到窗口立即刷新', async () => {
+    vi.useFakeTimers();
+    const first = { ...initial, revision: 'one' };
+    vi.mocked(git.open).mockResolvedValue(first);
+    await act(async () => { await repository.refresh(); });
+    const reads = vi.mocked(git.open).mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(15999); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 4);
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(git.open).toHaveBeenCalledTimes(reads + 4);
+    const changed = { ...first, revision: 'two' };
+    vi.mocked(git.open).mockResolvedValue(changed);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(repository.snapshot).toBe(changed);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 6);
+  });
+
+  it('隐藏窗口时取消轮询，恢复可见时刷新并且慢读取不会重叠', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    const reads = vi.mocked(git.open).mock.calls.length;
+    await act(async () => {
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+    expect(git.open).toHaveBeenCalledTimes(reads);
+    const pending = deferred();
+    vi.mocked(git.open).mockReturnValueOnce(pending.promise);
+    await act(async () => {
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+    expect(git.open).toHaveBeenCalledTimes(reads + 1);
+    await act(async () => { pending.resolve(initial); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(git.open).toHaveBeenCalledTimes(reads + 2);
+  });
+
   it('后台刷新、窗口焦点和手动刷新共享未完成的读取，只更新一次状态', async () => {
     const pending = deferred();
     vi.mocked(git.open).mockReturnValueOnce(pending.promise);

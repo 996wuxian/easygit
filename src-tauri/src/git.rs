@@ -13,6 +13,9 @@ mod checkout_tests;
 mod history;
 mod merge;
 mod merge_target;
+#[cfg(test)]
+mod performance_tests;
+mod revision;
 pub use comparison::{read_file_comparison, FileComparison};
 pub use merge::{
     commit_files, merge_branches, preview_merge, MergePreview, MergeRequest, MergeResult,
@@ -33,7 +36,7 @@ pub struct BootstrapInfo {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitFile {
     pub path: String,
@@ -46,7 +49,7 @@ pub struct GitFile {
     pub conflicted: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranch {
     pub name: String,
@@ -55,7 +58,7 @@ pub struct GitBranch {
     pub last_commit_date: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommit {
     pub hash: String,
@@ -69,23 +72,24 @@ pub struct GitCommit {
     pub remote: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitRef {
     pub name: String,
     pub remote: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitUpstream {
     pub name: String,
     pub hash: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositorySnapshot {
+    pub revision: String,
     pub path: String,
     pub name: String,
     pub branch: String,
@@ -113,6 +117,11 @@ pub struct PullResult {
 
 type RepoLocks = Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>;
 static REPO_LOCKS: OnceLock<RepoLocks> = OnceLock::new();
+static GIT_VERSION: OnceLock<String> = OnceLock::new();
+#[cfg(test)]
+thread_local! {
+    static GIT_COMMAND_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 fn command(root: Option<&Path>) -> Command {
     let mut command = Command::new("git");
@@ -133,6 +142,8 @@ fn command(root: Option<&Path>) -> Command {
 }
 
 fn output(root: Option<&Path>, args: &[&str]) -> Result<Output, String> {
+    #[cfg(test)]
+    GIT_COMMAND_COUNT.with(|count| count.set(count.get() + 1));
     let mut command = command(root);
     command.args(args);
     crate::process::output_with_timeout(&mut command, Duration::from_secs(60)).map_err(|error| {
@@ -178,17 +189,25 @@ fn optional_text(root: &Path, args: &[&str]) -> Result<Option<String>, String> {
         .then(|| String::from_utf8_lossy(&result.stdout).trim().to_owned()))
 }
 
+fn git_version() -> Result<String, String> {
+    if let Some(version) = GIT_VERSION.get() {
+        return Ok(version.clone());
+    }
+    let result = output(None, &["--version"])?;
+    if !result.status.success() {
+        return Err(error_text(&result));
+    }
+    let version = String::from_utf8_lossy(&result.stdout).trim().to_owned();
+    let _ = GIT_VERSION.set(version.clone());
+    Ok(version)
+}
+
 pub fn bootstrap() -> BootstrapInfo {
-    match output(None, &["--version"]) {
-        Ok(result) if result.status.success() => BootstrapInfo {
+    match git_version() {
+        Ok(version) => BootstrapInfo {
             git_available: true,
-            git_version: Some(String::from_utf8_lossy(&result.stdout).trim().to_owned()),
+            git_version: Some(version),
             error: None,
-        },
-        Ok(result) => BootstrapInfo {
-            git_available: false,
-            git_version: None,
-            error: Some(error_text(&result)),
         },
         Err(error) => BootstrapInfo {
             git_available: false,
@@ -279,42 +298,54 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         root,
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     )?)?;
-    let head = optional_text(root, &["rev-parse", "--verify", "HEAD"])?;
-    let branch = optional_text(root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?
-        .unwrap_or_else(|| {
-            head.as_ref()
-                .map(|hash| format!("detached@{}", &hash[..7]))
-                .unwrap_or_else(|| "HEAD".to_owned())
-        });
     let branch_data = run_text(
         root,
         &[
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)%00%(HEAD)%00%(refname)%00%(committerdate:iso-strict)",
+            "--format=%(refname:short)%00%(HEAD)%00%(refname)%00%(committerdate:iso-strict)%00%(objectname)%00%(upstream)%00%(upstream:short)",
             "refs/heads",
             "refs/remotes",
         ],
     )?;
-    let mut branches: Vec<GitBranch> = branch_data
+    let branch_refs: Vec<Vec<&str>> = branch_data
         .lines()
-        .filter_map(|line| {
-            let mut fields = line.split('\0');
-            let name = fields.next()?;
-            let current = fields.next()? == "*";
-            let reference = fields.next()?;
-            let last_commit_date = fields
-                .next()
-                .filter(|date| !date.is_empty())
-                .map(str::to_owned);
+        .map(|line| line.split('\0').collect::<Vec<_>>())
+        .filter(|fields| fields.len() == 7)
+        .collect();
+    let current = branch_refs.iter().find(|fields| fields[1] == "*");
+    let (head, branch) = match current {
+        Some(fields) => (
+            Some(fields[4].to_owned()),
+            fields[2]
+                .strip_prefix("refs/heads/")
+                .unwrap_or(fields[0])
+                .to_owned(),
+        ),
+        None => {
+            // Detached and unborn HEADs do not appear as a current branch ref.
+            let head = optional_text(root, &["rev-parse", "--verify", "HEAD"])?;
+            let branch = optional_text(root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?
+                .unwrap_or_else(|| {
+                    head.as_ref()
+                        .map(|hash| format!("detached@{}", &hash[..7]))
+                        .unwrap_or_else(|| "HEAD".to_owned())
+                });
+            (head, branch)
+        }
+    };
+    let mut branches: Vec<GitBranch> = branch_refs
+        .iter()
+        .filter_map(|fields| {
+            let name = fields[0];
             if name.ends_with("/HEAD") {
                 return None;
             }
             Some(GitBranch {
                 name: name.to_owned(),
-                current,
-                remote: reference.starts_with("refs/remotes/"),
-                last_commit_date,
+                current: fields[1] == "*",
+                remote: fields[2].starts_with("refs/remotes/"),
+                last_commit_date: (!fields[3].is_empty()).then(|| fields[3].to_owned()),
             })
         })
         .collect();
@@ -329,18 +360,25 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
             },
         );
     }
-    let upstream_name = optional_text(
-        root,
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    )?;
-    let upstream = match upstream_name {
-        Some(name) => optional_text(root, &["rev-parse", "--verify", "@{upstream}^{commit}"])?
-            .map(|hash| GitUpstream { name, hash }),
+    let upstream = match current.filter(|fields| !fields[5].is_empty()) {
+        Some(fields) => {
+            let hash = match branch_refs.iter().find(|entry| entry[2] == fields[5]) {
+                Some(reference) => Some(reference[4].to_owned()),
+                // Preserve support for custom fetch mappings outside refs/remotes.
+                None => optional_text(
+                    root,
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        &format!("{}^{{commit}}", fields[5]),
+                    ],
+                )?,
+            };
+            hash.map(|hash| GitUpstream {
+                name: fields[6].to_owned(),
+                hash,
+            })
+        }
         None => None,
     };
     let has_upstream = upstream.is_some();
@@ -391,7 +429,8 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         .to_string_lossy()
         .trim_start_matches("\\\\?\\")
         .to_owned();
-    Ok(RepositorySnapshot {
+    let mut snapshot = RepositorySnapshot {
+        revision: String::new(),
         name: root
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -399,7 +438,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         path: display_path,
         branch,
         head,
-        git_version: run_text(root, &["--version"])?,
+        git_version: git_version()?,
         files,
         branches,
         commits,
@@ -410,7 +449,9 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         ahead,
         behind,
         operation,
-    })
+    };
+    snapshot.revision = revision::fingerprint(root, &git_dir, &snapshot);
+    Ok(snapshot)
 }
 
 pub fn open_repository(path: &str) -> Result<RepositorySnapshot, String> {
