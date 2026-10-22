@@ -1,36 +1,53 @@
 import { useState, type DragEvent } from 'react';
 import { IconArrowRight, IconCloud, IconGitBranch, IconGitMerge } from '@tabler/icons-react';
-import type { RepositorySnapshot } from '../../services/git';
+import type { GitBranch, RepositorySnapshot } from '../../services/git';
 import { recentBranchGroups } from './model';
 import './branches.css';
 
 export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false }: {
   snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string) => void;
-  onMergeRequest?: (source: string, target: string) => void; mergeDisabled?: boolean;
+  onMergeRequest?: (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => void; mergeDisabled?: boolean;
 }) {
-  const [dragSource, setDragSource] = useState<string | null>(null);
-  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  const [dragSource, setDragSource] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
+  const sameBranch = (left: Pick<GitBranch, 'name' | 'remote'> | null, right: GitBranch) => left?.name === right.name && left.remote === right.remote;
   const groups = recentBranchGroups(snapshot.branches);
-  const localBranches = dragSource ? snapshot.branches.filter(branch => !branch.remote) : groups.local;
+  const recentLocalNames = new Set(groups.local.map(branch => branch.name));
+  const localBranches = dragSource ? [...groups.local, ...snapshot.branches.filter(branch => !branch.remote && !recentLocalNames.has(branch.name))] : groups.local;
   const currentFiltered = snapshot.branch && !snapshot.branch.startsWith('detached@') && !groups.local.some(branch => branch.current);
-  const handleDragStart = (event: DragEvent<HTMLButtonElement>, name: string) => {
-    if (!onMergeRequest || mergeDisabled) { event.preventDefault(); return; }
+  const handleDragStart = (event: DragEvent<HTMLElement>, branch: GitBranch) => {
+    if (!onMergeRequest || mergeDisabled || busy) { event.preventDefault(); return; }
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('application/x-easygit-branch', name);
-    event.dataTransfer.setData('text/plain', name);
-    setDragSource(name);
+    event.dataTransfer.setData('application/x-easygit-branch', JSON.stringify({ name: branch.name, remote: branch.remote }));
+    event.dataTransfer.setData('text/plain', branch.name);
+    setDragSource({ name: branch.name, remote: branch.remote });
   };
-  const handleDrop = (event: DragEvent<HTMLButtonElement>, target: string) => {
+  const handleDrop = (event: DragEvent<HTMLElement>, target: GitBranch) => {
     event.preventDefault();
     event.stopPropagation();
-    const source = event.dataTransfer.getData('application/x-easygit-branch') || dragSource;
+    const source = dragSource;
     setMergeTarget(null);
     setDragSource(null);
-    if (source && source !== target && onMergeRequest && !mergeDisabled) onMergeRequest(source, target);
+    if (source && !sameBranch(source, target) && onMergeRequest && !mergeDisabled && !busy) onMergeRequest(source.name, target.name, source.remote, target.remote);
   };
+  const dragProps = (branch: GitBranch) => ({
+    draggable: Boolean(onMergeRequest) && !mergeDisabled && !busy,
+    onDragStart: (event: DragEvent<HTMLElement>) => handleDragStart(event, branch),
+    onDragEnd: () => { setDragSource(null); setMergeTarget(null); },
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      if (!dragSource || sameBranch(dragSource, branch) || mergeDisabled || busy) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      if (!sameBranch(mergeTarget, branch)) setMergeTarget({ name: branch.name, remote: branch.remote });
+    },
+    onDragLeave: (event: DragEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMergeTarget(current => sameBranch(current, branch) ? null : current);
+    },
+    onDrop: (event: DragEvent<HTMLElement>) => handleDrop(event, branch),
+  });
   return <div className="branches-content">
     <div className="branch-filter-note">近 6 个月<span>按最后提交时间</span></div>
-    {onMergeRequest && <div className="branch-merge-hint"><IconGitMerge size={13} />拖动本地分支到目标分支即可合并</div>}
+    {onMergeRequest && <div className="branch-merge-hint"><IconGitMerge size={13} />拖动分支到目标分支即可预览合并，支持本地和远程分支</div>}
     {currentFiltered && <div className="branch-current-note" title={snapshot.branch}>当前：<code>{snapshot.branch}</code><span>{snapshot.head ? '不在近期列表中' : '尚无提交'}</span></div>}
     {(['local', 'remote'] as const).map(type => {
       const branches = type === 'local' ? localBranches : groups.remote;
@@ -40,24 +57,17 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
         const date = branch.lastCommitDate ? new Date(branch.lastCommitDate) : null;
         const content = <>{branch.remote ? <IconCloud size={16} /> : <IconGitBranch size={16} />}<span className="branch-name">{branch.name}</span>{date && <time dateTime={branch.lastCommitDate!} title={`最后提交：${date.toLocaleString('zh-CN')}`}>{date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time>}{branch.current ? <span className="current-badge">当前</span> : !branch.remote && <IconArrowRight size={14} className="branch-arrow" />}</>;
         return branch.remote
-          ? <div className="branch-row remote" key={branch.name} title={`远程跟踪分支：${branch.name}，以上次获取更新为准`}>{content}</div>
+          ? <div className={`branch-row remote ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`} key={branch.name}
+            {...dragProps(branch)}
+            title={`远程跟踪分支：${branch.name}，以上次获取更新为准${onMergeRequest ? '；可拖动或接收其他分支以预览合并' : ''}`}>{content}</div>
           : <button
-            className={`branch-row ${branch.current ? 'current' : ''} ${mergeTarget === branch.name && dragSource !== branch.name ? 'merge-target' : ''} ${dragSource === branch.name ? 'merge-source' : ''}`}
+            className={`branch-row ${branch.current ? 'current' : ''} ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`}
             key={branch.name}
-            draggable={Boolean(onMergeRequest) && !mergeDisabled}
+            {...dragProps(branch)}
             aria-disabled={busy || branch.current}
+            aria-label={branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
             title={onMergeRequest ? `${branch.current ? '当前分支' : `切换到 ${branch.name}`}；拖动到其他本地分支以预览合并` : branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
             onClick={() => { if (!busy && !branch.current) onCheckout(branch.name); }}
-            onDragStart={event => handleDragStart(event, branch.name)}
-            onDragEnd={() => { setDragSource(null); setMergeTarget(null); }}
-            onDragOver={event => {
-              if (!dragSource || dragSource === branch.name || mergeDisabled) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'move';
-              if (mergeTarget !== branch.name) setMergeTarget(branch.name);
-            }}
-            onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMergeTarget(current => current === branch.name ? null : current); }}
-            onDrop={event => handleDrop(event, branch.name)}
           >{content}</button>;
       })}
       {!branches.length && <div className="branch-empty">{type === 'local' ? '近半年没有本地分支提交' : '近半年没有远程分支提交'}</div>}

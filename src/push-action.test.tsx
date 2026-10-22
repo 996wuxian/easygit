@@ -97,7 +97,7 @@ describe('项目远程状态展示', () => {
     await openWorkspace();
     const button = host.querySelector<HTMLButtonElement>('[data-eg-panel="branches"] [aria-label="获取远程更新"]')!;
     expect(button.closest('.workspace-section-heading')).toBeNull();
-    expect(button.nextElementSibling?.classList.contains('eg-panel-drag-handle')).toBe(true);
+    expect(button.parentElement?.querySelector('.eg-panel-drag-handle')).not.toBeNull();
     expect(button.classList.contains('panel-fetch-button')).toBe(true);
     const history = host.querySelector('.history-row');
     expect(history?.textContent).toContain('Local history');

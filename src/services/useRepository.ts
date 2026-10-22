@@ -230,11 +230,11 @@ export function useRepository(onReady: () => void) {
     setBusy(true);
     const token = ++generation.current;
     try {
-      const result = await git.mergeBranches(snapshotRef.current.path, preview.source, preview.target, preview.sourceHead, preview.targetHead);
+      const result = await git.mergeBranches(snapshotRef.current.path, preview);
       if (token !== generation.current) return false;
       snapshotRef.current = result.snapshot;
       setSnapshot(result.snapshot);
-      if (result.merged) notify(`已将 ${preview.source} 合并到 ${preview.target}`);
+      if (result.merged) notify(preview.targetRemote ? `已将 ${preview.source} 合并到本地 ${preview.localTarget}，请推送到 ${preview.target}` : `已将 ${preview.source} 合并到 ${preview.target}`);
       else if (result.conflicted) notify(`合并遇到冲突，请在文件更改面板中解决${result.error ? `：${result.error}` : '。'}`, true);
       else notify(result.error || '合并失败。', true);
       return result.merged || result.conflicted;

@@ -12,7 +12,7 @@ export interface GitBranch { name: string; current: boolean; remote: boolean; la
 export interface GitCommitRef { name: string; remote: boolean }
 export type CommitAction = 'soft' | 'mixed' | 'revert';
 export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string; parents: string[]; refs: GitCommitRef[]; local: boolean; remote: boolean }
-export interface MergePreview { source: string; target: string; sourceHead: string; targetHead: string; commits: GitCommit[]; commitCount: number }
+export interface MergePreview { source: string; sourceRemote: boolean; target: string; targetRemote: boolean; sourceHead: string; targetHead: string; localTarget: string; localTargetHead: string | null; targetNeedsSync: boolean; commits: GitCommit[]; commitCount: number }
 export interface MergeResult { snapshot: RepositorySnapshot; merged: boolean; conflicted: boolean; error: string | null }
 export interface RepositorySnapshot {
   path: string;
@@ -82,7 +82,10 @@ export const git = {
   fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
   pull: (path: string) => invokeCommand<PullResult>('pull_repository', { path }),
   push: (path: string) => invokeCommand<RepositorySnapshot>('push_repository', { path }),
-  previewMerge: (path: string, source: string, target: string) => invokeCommand<MergePreview>('preview_merge', { path, source, target }),
-  mergeBranches: (path: string, source: string, target: string, sourceHead: string, targetHead: string) => invokeCommand<MergeResult>('merge_branches', { path, source, target, sourceHead, targetHead }),
+  previewMerge: (path: string, source: string, target: string, sourceRemote = false, targetRemote = false) => invokeCommand<MergePreview>('preview_merge', { path, source, target, sourceRemote, targetRemote }),
+  mergeBranches: (path: string, preview: MergePreview) => {
+    const { source, target, sourceRemote, targetRemote, sourceHead, targetHead, localTarget, localTargetHead } = preview;
+    return invokeCommand<MergeResult>('merge_branches', { path, request: { source, target, sourceRemote, targetRemote, sourceHead, targetHead, localTarget, localTargetHead } });
+  },
   commitFiles: (path: string, commit: string) => invokeCommand<string[]>('read_commit_files', { path, commit }),
 };

@@ -10,8 +10,11 @@ pub use commit_actions::{act_on_commit, CommitAction};
 pub use conflicts::{read_conflict, resolve_conflict, ConflictFile, ConflictResolution};
 mod history;
 mod merge;
+mod merge_target;
 pub use comparison::{read_file_comparison, FileComparison};
-pub use merge::{commit_files, merge_branches, preview_merge, MergePreview, MergeResult};
+pub use merge::{
+    commit_files, merge_branches, preview_merge, MergePreview, MergeRequest, MergeResult,
+};
 use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},

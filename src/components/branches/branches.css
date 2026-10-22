@@ -15,10 +15,10 @@
 .branch-row.current > svg { color: var(--primary); }
 button.branch-row:not(:disabled):hover { background: var(--bg-soft); color: var(--text); }
 button.branch-row[aria-disabled="true"] { cursor: default; }
-button.branch-row[draggable="true"] { cursor: grab; }
-button.branch-row.merge-source { opacity: .5; }
-button.branch-row.merge-target { outline: 1px dashed var(--primary); outline-offset: -2px; color: var(--primary); background: var(--primary-soft); }
-button.branch-row.merge-target > svg { color: var(--primary); }
+.branch-row[draggable="true"] { cursor: grab; }
+.branch-row.merge-source { opacity: .5; }
+.branch-row.merge-target { outline: 1px dashed var(--primary); outline-offset: -2px; color: var(--primary); background: var(--primary-soft); }
+.branch-row.merge-target > svg { color: var(--primary); }
 .current-badge { flex-shrink: 0; font-size: 9px; color: var(--primary); padding: 2px 5px; border-radius: 4px; background: var(--primary-soft); }
 .branch-arrow { opacity: 0; }
 .branch-row:hover .branch-arrow { opacity: 1; }

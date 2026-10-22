@@ -65,7 +65,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [commitFiles, setCommitFiles] = useState<string[] | null>(null);
   const [commitFilesError, setCommitFilesError] = useState<string | null>(null);
   const [commitFilesLoading, setCommitFilesLoading] = useState(false);
-  const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string } | null>(null);
+  const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string; sourceRemote: boolean; targetRemote: boolean } | null>(null);
   const [activeNav, setActiveNav] = useState('workspace');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
   const [repositoryTooltip, setRepositoryTooltip] = useState<{ name: string; path: string; left: number; top: number } | null>(null);
@@ -80,7 +80,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [conflictFile, setConflictFile] = useState<string | null>(null);
   const [blockDiscard, setBlockDiscard] = useState<{ file: string; block: DiffBlock } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
-  const requestBranchMerge = (source: string, target: string) => { setModal(null); setMergeRequest({ source, target }); };
+  const requestBranchMerge = (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => { setModal(null); setMergeRequest({ source, target, sourceRemote, targetRemote }); };
   const workspaces = useMemo(() => {
     const available = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
       ? [{ name: snapshot.name, path: snapshot.path }, ...repo.recents] : repo.recents;
@@ -507,7 +507,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
 
-    {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.source}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} target={mergeRequest.target} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
+    {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.sourceRemote}:${mergeRequest.source}:${mergeRequest.targetRemote}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} sourceRemote={mergeRequest.sourceRemote} target={mergeRequest.target} targetRemote={mergeRequest.targetRemote} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
 
     {selectedCommit && <Dialog title="提交详情" onClose={() => { setSelectedCommit(null); setCommitDetailStatus(null); }}><div className="commit-detail"><div className="commit-detail-heading"><IconHistory size={22} stroke={1.6} /><h3 title={selectedCommit.subject}>{selectedCommit.subject}</h3></div>{selectedCommit.refs.length > 0 && <CommitRefs commit={selectedCommit} />}<p>{selectedCommit.author} · {new Date(selectedCommit.date).toLocaleString('zh-CN')}</p><p>{commitDetailStatus ?? commitStatus(selectedCommit, snapshot.hasUpstream).label}</p><label className="field-label">Commit SHA</label><div className="commit-hash"><code>{selectedCommit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(selectedCommit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={16} /></button></div><label className="field-label commit-files-label">提交涉及的文件</label>{commitFilesLoading ? <div className="commit-files-state"><IconLoader2 size={15} className="spin" />正在读取文件列表…</div> : commitFilesError ? <div className="commit-files-state error">{commitFilesError}</div> : <div className="commit-files-list">{commitFiles?.length ? commitFiles.map(file => <code key={file} title={file}>{file}</code>) : <span>此提交没有文件差异。</span>}</div>}</div></Dialog>}
 

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { IconArrowRight, IconGitBranch, IconGitMerge, IconLoader2 } from '@tabler/icons-react';
+import { IconArrowRight, IconCloud, IconGitBranch, IconGitMerge, IconLoader2 } from '@tabler/icons-react';
 import { Dialog } from '../Dialog';
 import { git, type GitCommit, type MergePreview } from '../../services/git';
 
 export function BranchMergeDialog({
-  path, source, target, busy, hasChanges, operation, onClose, onConfirm, onSelectCommit,
+  path, source, sourceRemote, target, targetRemote, busy, hasChanges, operation, onClose, onConfirm, onSelectCommit,
 }: {
-  path: string; source: string; target: string; busy: boolean; hasChanges: boolean; operation: string | null;
+  path: string; source: string; sourceRemote: boolean; target: string; targetRemote: boolean; busy: boolean; hasChanges: boolean; operation: string | null;
   onClose: () => void; onConfirm: (preview: MergePreview) => Promise<boolean>; onSelectCommit: (commit: GitCommit) => void;
 }) {
   const [preview, setPreview] = useState<MergePreview | null>(null);
@@ -18,7 +18,7 @@ export function BranchMergeDialog({
     setPreview(null);
     setError(null);
     setLoading(true);
-    void git.previewMerge(path, source, target).then(value => {
+    void git.previewMerge(path, source, target, sourceRemote, targetRemote).then(value => {
       if (active) setPreview(value);
     }).catch(reason => {
       if (active) setError(String(reason));
@@ -26,15 +26,16 @@ export function BranchMergeDialog({
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [path, source, target]);
+  }, [path, source, sourceRemote, target, targetRemote]);
 
   const canConfirm = Boolean(preview?.commitCount && !loading && !error && !busy && !hasChanges && !operation);
   return <Dialog title="合并分支" className="branch-merge-dialog" onClose={busy ? () => {} : onClose}>
-    <div className="merge-branch-route"><span><small>源分支</small><code><IconGitBranch size={15} />{source}</code></span><IconArrowRight size={17} /><span><small>目标分支</small><code><IconGitBranch size={15} />{target}</code></span></div>
-    <p className="dialog-description">将源分支中目标分支尚未包含的提交合并到目标分支。确认前请检查提交列表。</p>
+    <div className="merge-branch-route"><span><small>{sourceRemote ? '远程源分支' : '本地源分支'}</small><code>{sourceRemote ? <IconCloud size={15} /> : <IconGitBranch size={15} />}{source}</code></span><IconArrowRight size={17} /><span><small>{targetRemote ? '远程目标分支' : '本地目标分支'}</small><code>{targetRemote ? <IconCloud size={15} /> : <IconGitBranch size={15} />}{target}</code></span></div>
+    <p className="dialog-description">将源分支中目标分支尚未包含的提交合并到目标分支。确认前请检查提交列表。{(sourceRemote || targetRemote) && '远程分支以上次获取更新为准。'}</p>
     {loading && <div className="merge-loading"><IconLoader2 size={18} className="spin" />正在读取待合并提交…</div>}
     {error && <div className="merge-error" role="alert">{error}</div>}
     {preview && <>
+      {targetRemote && <p className="preview-note">{preview.localTargetHead === null ? <>将从 <code>{target}</code> 创建本地分支 <code>{preview.localTarget}</code> 并合并。</> : preview.targetNeedsSync ? <>将先同步本地 <code>{preview.localTarget}</code> 到 <code>{target}</code>，再合并。</> : <>将在本地分支 <code>{preview.localTarget}</code> 上合并{preview.localTargetHead !== preview.targetHead ? '，保留已有未推送提交' : ''}。</>}完成后请推送该本地分支到 <code>{target}</code>。</p>}
       <div className="merge-preview-heading"><strong>待合并提交</strong><span>{preview.commitCount} 个</span></div>
       {preview.commitCount === 0 ? <div className="merge-empty">源分支没有新的提交可以合并。</div> : <div className="merge-commit-list">
         {preview.commits.map(commit => <button className="merge-commit-row" key={commit.hash} onClick={() => onSelectCommit(commit)} title="查看提交详情和改动文件">

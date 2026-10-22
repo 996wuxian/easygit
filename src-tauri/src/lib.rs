@@ -246,19 +246,19 @@ async fn preview_merge(
     path: String,
     source: String,
     target: String,
+    source_remote: bool,
+    target_remote: bool,
 ) -> Result<git::MergePreview, String> {
-    blocking(move || git::preview_merge(&path, &source, &target)).await
+    blocking(move || git::preview_merge(&path, &source, &target, source_remote, target_remote))
+        .await
 }
 
 #[tauri::command]
 async fn merge_branches(
     path: String,
-    source: String,
-    target: String,
-    source_head: String,
-    target_head: String,
+    request: git::MergeRequest,
 ) -> Result<git::MergeResult, String> {
-    blocking(move || git::merge_branches(&path, &source, &target, &source_head, &target_head)).await
+    blocking(move || git::merge_branches(&path, request)).await
 }
 
 #[tauri::command]
