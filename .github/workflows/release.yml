@@ -97,7 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          tauriScript: npm run tauri --
+          tauriScript: npm run tauri
           args: --target x86_64-pc-windows-msvc --bundles nsis
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: easygit ${{ steps.version.outputs.tag }}
