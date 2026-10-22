@@ -217,8 +217,12 @@ async fn act_on_commit(
 }
 
 #[tauri::command]
-async fn checkout_branch(path: String, branch: String) -> Result<RepositorySnapshot, String> {
-    blocking(move || git::checkout_branch(&path, &branch)).await
+async fn checkout_branch(
+    path: String,
+    branch: String,
+    remote: bool,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::checkout_branch(&path, &branch, remote)).await
 }
 
 #[tauri::command]

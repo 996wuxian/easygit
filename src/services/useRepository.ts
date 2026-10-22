@@ -204,7 +204,7 @@ export function useRepository(onReady: () => void) {
   const resolveConflict = (file: string, revision: string, resolution: ConflictResolution, content?: string) => run('冲突已解决并暂存', path => git.resolveConflict(path, file, revision, resolution, content));
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
-  const checkout = (branch: string) => run(`已切换到 ${branch}`, path => git.checkout(path, branch));
+  const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote));
   const createBranch = (branch: string) => {
     const base = snapshotRef.current.branch || '当前提交';
     return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch));

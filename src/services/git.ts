@@ -77,7 +77,7 @@ export const git = {
   resolveConflict: (path: string, file: string, revision: string, resolution: ConflictResolution, content?: string) => invokeCommand<RepositorySnapshot>('resolve_conflict', { path, file, revision, resolution, content: content ?? null }),
   commit: (path: string, message: string) => invokeCommand<RepositorySnapshot>('create_commit', { path, message }),
   actOnCommit: (path: string, commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => invokeCommand<RepositorySnapshot>('act_on_commit', { path, commit, expectedHead, expectedBranch, action }),
-  checkout: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch }),
+  checkout: (path: string, branch: string, remote = false) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch, remote }),
   createBranch: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('create_branch', { path, branch }),
   fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
   pull: (path: string) => invokeCommand<PullResult>('pull_repository', { path }),

@@ -29,8 +29,8 @@ pub(super) fn resolve_target(
     target: &str,
     remote: bool,
 ) -> Result<MergeTarget, String> {
-    let head = branch_head(root, target, remote)?;
     if !remote {
+        let head = branch_head(root, target, false)?;
         return Ok(MergeTarget {
             local: target.to_owned(),
             local_head: Some(head.clone()),
@@ -41,6 +41,25 @@ pub(super) fn resolve_target(
             bind_upstream: false,
         });
     }
+    let mut destination = resolve_remote_branch(root, target)?;
+    if let Some(local_head) = &destination.local_head {
+        if is_ancestor(root, &destination.head, local_head)? {
+            destination.merge_head = local_head.clone();
+        } else if is_ancestor(root, local_head, &destination.head)? {
+            destination.needs_sync = true;
+        } else {
+            return Err(format!(
+                "本地分支“{}”与“{target}”已分叉。请先同步并处理冲突，或直接以本地“{}”为目标合并。",
+                destination.local, destination.local
+            ));
+        }
+    }
+    Ok(destination)
+}
+
+// Switching reuses this resolution without the merge target's synchronization.
+pub(super) fn resolve_remote_branch(root: &Path, target: &str) -> Result<MergeTarget, String> {
+    let head = branch_head(root, target, true)?;
     let remote_ref = branch_reference(root, target, true)?;
     if optional_text(root, &["symbolic-ref", "--quiet", &remote_ref])?.is_some() {
         return Err("请选择实际的远程分支，不能使用远程 HEAD 别名。".to_owned());
@@ -89,24 +108,13 @@ pub(super) fn resolve_target(
         (default_local.to_owned(), None, true)
     };
 
-    let (merge_head, needs_sync) = if let Some(local_head) = &local_head {
-        if is_ancestor(root, &head, local_head)? {
-            (local_head.clone(), false)
-        } else if is_ancestor(root, local_head, &head)? {
-            (head.clone(), true)
-        } else {
-            return Err(format!("本地分支“{local}”与“{target}”已分叉。请先同步并处理冲突，或直接以本地“{local}”为目标合并。"));
-        }
-    } else {
-        (head.clone(), false)
-    };
     Ok(MergeTarget {
         local,
         local_head,
+        merge_head: head.clone(),
         head,
-        merge_head,
         remote_ref: Some(remote_ref),
-        needs_sync,
+        needs_sync: false,
         bind_upstream,
     })
 }

@@ -8,6 +8,8 @@ mod conflicts;
 mod conflicts_tests;
 pub use commit_actions::{act_on_commit, CommitAction};
 pub use conflicts::{read_conflict, resolve_conflict, ConflictFile, ConflictResolution};
+#[cfg(test)]
+mod checkout_tests;
 mod history;
 mod merge;
 mod merge_target;
@@ -636,14 +638,23 @@ pub fn create_commit(path: &str, message: &str) -> Result<RepositorySnapshot, St
     })
 }
 
-pub fn checkout_branch(path: &str, branch: &str) -> Result<RepositorySnapshot, String> {
+pub fn checkout_branch(
+    path: &str,
+    branch: &str,
+    remote: bool,
+) -> Result<RepositorySnapshot, String> {
     with_repository(path, |root| {
-        run(root, &["check-ref-format", "--branch", branch])?;
-        let files = parse_status(&run(root, &["status", "--porcelain=v1", "-z"])?)?;
-        if files.iter().any(|file| file.conflicted) {
-            return Err("请先处理当前冲突，再切换分支。".to_owned());
+        let current = snapshot(root)?;
+        if current.operation.is_some() || current.files.iter().any(|file| file.conflicted) {
+            return Err("请先完成当前 Git 操作和冲突处理，再切换分支。".to_owned());
         }
-        run(root, &["switch", "--", branch])?;
+        if remote {
+            let target = merge_target::resolve_remote_branch(root, branch)?;
+            merge_target::prepare_target(root, &current.branch, &target)?;
+        } else {
+            run(root, &["check-ref-format", "--branch", branch])?;
+            run(root, &["switch", "--", branch])?;
+        }
         snapshot(root)
     })
 }
@@ -1123,7 +1134,10 @@ mod tests {
         stage_files(path, &["README.md".to_owned()]).unwrap();
         create_commit(path, "initial").unwrap();
         run(directory.path(), &["branch", "feature"]).unwrap();
-        assert_eq!(checkout_branch(path, "feature").unwrap().branch, "feature");
+        assert_eq!(
+            checkout_branch(path, "feature", false).unwrap().branch,
+            "feature"
+        );
         let worktree = tempfile::tempdir().unwrap();
         let worktree_path = worktree.path().join("linked");
         run(

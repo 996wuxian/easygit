@@ -5,7 +5,7 @@ import { recentBranchGroups } from './model';
 import './branches.css';
 
 export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false }: {
-  snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string) => void;
+  snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string, remote: boolean) => void;
   onMergeRequest?: (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => void; mergeDisabled?: boolean;
 }) {
   const [dragSource, setDragSource] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
@@ -55,19 +55,15 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
       <div className="branch-group-heading">{type === 'local' ? <IconGitBranch size={13} /> : <IconCloud size={13} />}<span>{type === 'local' ? '本地分支' : '远程分支'}</span><b>{branches.length}</b></div>
       {branches.map(branch => {
         const date = branch.lastCommitDate ? new Date(branch.lastCommitDate) : null;
-        const content = <>{branch.remote ? <IconCloud size={16} /> : <IconGitBranch size={16} />}<span className="branch-name">{branch.name}</span>{date && <time dateTime={branch.lastCommitDate!} title={`最后提交：${date.toLocaleString('zh-CN')}`}>{date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time>}{branch.current ? <span className="current-badge">当前</span> : !branch.remote && <IconArrowRight size={14} className="branch-arrow" />}</>;
-        return branch.remote
-          ? <div className={`branch-row remote ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`} key={branch.name}
-            {...dragProps(branch)}
-            title={`远程跟踪分支：${branch.name}，以上次获取更新为准${onMergeRequest ? '；可拖动或接收其他分支以预览合并' : ''}`}>{content}</div>
-          : <button
-            className={`branch-row ${branch.current ? 'current' : ''} ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`}
+        const content = <>{branch.remote ? <IconCloud size={16} /> : <IconGitBranch size={16} />}<span className="branch-name">{branch.name}</span>{date && <time dateTime={branch.lastCommitDate!} title={`最后提交：${date.toLocaleString('zh-CN')}`}>{date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time>}{branch.current ? <span className="current-badge">当前</span> : <IconArrowRight size={14} className="branch-arrow" />}</>;
+        return <button
+            className={`branch-row ${branch.remote ? 'remote' : ''} ${branch.current ? 'current' : ''} ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`}
             key={branch.name}
             {...dragProps(branch)}
             aria-disabled={busy || branch.current}
-            aria-label={branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
-            title={onMergeRequest ? `${branch.current ? '当前分支' : `切换到 ${branch.name}`}；拖动到其他本地分支以预览合并` : branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
-            onClick={() => { if (!busy && !branch.current) onCheckout(branch.name); }}
+            aria-label={branch.remote ? `切换到远程分支 ${branch.name}` : branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
+            title={branch.remote ? `切换到 ${branch.name} 对应的本地跟踪分支，没有时自动创建；远程内容以上次获取更新为准${onMergeRequest ? '；可拖动合并' : ''}` : onMergeRequest ? `${branch.current ? '当前分支' : `切换到 ${branch.name}`}；可拖动合并` : branch.current ? `当前分支：${branch.name}` : `切换到 ${branch.name}`}
+            onClick={() => { if (!busy && !branch.current) onCheckout(branch.name, branch.remote); }}
           >{content}</button>;
       })}
       {!branches.length && <div className="branch-empty">{type === 'local' ? '近半年没有本地分支提交' : '近半年没有远程分支提交'}</div>}
