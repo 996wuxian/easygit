@@ -6,7 +6,7 @@
 
 ## 运行
 
-需要 Node.js 22、Rust、Git，以及 Tauri 在 Windows 上所需的 C++ Build Tools 和 WebView2。
+需要 Node.js 22.12 或更高版本、Rust、Git，以及 Tauri 在 Windows 上所需的 C++ Build Tools 和 WebView2。
 
 ```powershell
 npm ci
@@ -25,6 +25,7 @@ npm run dev
 
 - React 加载前即显示品牌 loading，完成启动检查后淡出。
 - 自定义无边框标题栏、浅色/深色主题、Tabler 图标。
+- 偏好设置中的“关于与更新”展示作者、当前版本、仓库与下载地址；桌面端启动时检查一次正式版本，支持手动检查和下载安装包，下载完成后手动运行更新。
 - 关闭窗口或最小化会收起到系统托盘，保留当前工作区和草稿；点击托盘图标重新打开，右键可选择“显示窗口”或“退出 easygit”。真正退出前会等待本地数据保存。
 - 七个独立面板：工作区变更、代码差异、分支、提交记录、暂存架、操作记录、项目脚本。
 - 项目脚本面板读取根目录 `package.json` 的 `scripts`，识别 `packageManager` 或锁文件中的 npm / pnpm / yarn / bun，点击运行图标在项目目录打开终端执行；终端保留输出，可在终端中按 Ctrl + C 停止。
@@ -52,11 +53,16 @@ npm run dev
 
 ## 验证与打包
 
+作者：[996wuxian](https://github.com/996wuxian) · 仓库：[easygit](https://github.com/996wuxian/easygit) · 下载：[GitHub Releases](https://github.com/996wuxian/easygit/releases)。
+
+已配置 GitHub Actions 验证和 Windows x64 中文安装包发布。版本以 `package.json` 为准，推送 main 的版本变更、推送匹配版本的 `v*` 标签，或手动运行 **Release Windows** 后自动打包并发布。版本同步、发布说明和本机安装包路径见 [发布与更新](docs/releasing.md)。
+
 ```powershell
 npm run check
+npm run test:release
 cd src-tauri
 cargo fmt --check
-cargo test --offline
+cargo test --offline --lib
 cargo clippy --offline --all-targets -- -D warnings
 ```
 

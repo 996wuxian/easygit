@@ -32,6 +32,8 @@ UI 接收结构化的 `RepositorySnapshot`，不直接构建或解析 Git 命令
 
 ## Git 服务
 
+作者和仓库信息集中在 `src/services/appInfo.ts`，版本直接读取 package.json。`useAppUpdates` 在 App 层维护检查与下载状态，使关于窗口关闭后仍能继续下载；仅启动检查一次，其余由用户触发。Rust `updates.rs` 请求固定 GitHub Releases API，按系统和架构选取安装包，流式下载并校验大小与可用的 SHA-256 后发布文件；浏览器链接仅允许作者、项目和发布页面。更新网络请求不放宽 WebView CSP。打包及版本同步见 [releasing.md](releasing.md)。
+
 状态使用 `git status --porcelain=v1 -z`，路径通过独立命令参数传递，使用 literal pathspec，不经过 shell 拼接。写操作统一加仓库锁，执行结束后返回新快照。后台任务通过 Tauri async command 调度；Windows 子进程隐藏控制台。
 
 `git/stash.rs` 根据 selector 和不可变 SHA 同时核对记录，避免列表变化后恢复或删除错条。恢复使用 `apply --index` 保留暂存状态，pop 在恢复成功后再次校验记录再删除；冲突保留记录并返回新快照。保存命令不接收文件路径，在该调用中用 `--no-literal-pathspecs` 覆盖通用 literal 模式，使 Git stash 内部正确清理已保存的新文件；否则 Windows Git 2.42 会留下这些文件。

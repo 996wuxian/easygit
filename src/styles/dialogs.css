@@ -99,7 +99,7 @@
 .storage-migration-form { margin-top: 22px; }
 .storage-migration-form .field-help { line-height: 1.7; }
 .storage-settings-error { color: var(--danger); font-size: 12px; line-height: 1.7; }
-.about-app { display: flex; align-items: center; gap: 10px; padding-top: 19px; }
+.about-app { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px; border-radius: 10px; }
 .about-app > img { width: 33px; height: 33px; border-radius: 9px; }
 .about-app strong { font-size: 13px; font-weight: 600; }
 .about-app strong > span { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 5px; }

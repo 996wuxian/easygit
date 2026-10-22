@@ -3,6 +3,7 @@ mod process;
 mod project;
 mod storage;
 mod tray;
+mod updates;
 
 use git::{BootstrapInfo, RepositorySnapshot};
 
@@ -337,9 +338,14 @@ async fn read_comparison_diff(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(updates::UpdateState::default())
         .setup(tray::setup)
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            updates::check_for_updates,
+            updates::download_update,
+            updates::open_update_download_directory,
+            updates::open_external_url,
             tray::register_window_lifecycle,
             tray::show_main_window,
             tray::exit_app,

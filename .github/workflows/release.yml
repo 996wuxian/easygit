@@ -1,0 +1,115 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - .github/workflows/release.yml
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+jobs:
+  publish-windows:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      CARGO_HTTP_TIMEOUT: 120
+      CARGO_NET_RETRY: 5
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Read and synchronize version
+        id: version
+        shell: pwsh
+        run: |
+          node scripts/sync-version.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) {
+            throw 'The pushed tag must match package.json version.'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Split('+')[0].Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Check published installer
+        id: existing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $url = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG"
+          $response = Invoke-WebRequest -Uri $url -Headers $headers -TimeoutSec 30 -SkipHttpErrorCheck
+          if ($response.StatusCode -eq 404) { 'exists=false' >> $env:GITHUB_OUTPUT; exit 0 }
+          if ($response.StatusCode -ne 200) { throw "GitHub release lookup failed: HTTP $($response.StatusCode)" }
+          $release = $response.Content | ConvertFrom-Json
+          $version = $env:RELEASE_TAG.Substring(1)
+          $installer = @($release.assets | Where-Object { $_.name -eq "easygit_${version}_x64-setup.exe" -and $_.size -gt 0 })
+          $exists = -not $release.draft -and $installer.Count -gt 0
+          "exists=$($exists.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy, rustfmt
+      - uses: actions/cache@v4
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+      - name: Install dependencies and verify
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib -- --test-threads=4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and upload installer to draft release
+        id: tauri
+        if: steps.existing.outputs.exists != 'true'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tauriScript: npm run tauri --
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: easygit ${{ steps.version.outputs.tag }}
+          releaseBody: |
+            Windows x64 中文安装包。
+            从下方 Assets 下载 easygit_*_x64-setup.exe 安装或升级。
+            升级前请从系统托盘退出 easygit。
+          releaseDraft: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+      - name: Publish completed release
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          IS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          gh release edit "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false --prerelease=$env:IS_PRERELEASE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

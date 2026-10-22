@@ -1,7 +1,10 @@
 [package]
 name = "easygit"
-version = "0.1.0"
+version = "0.1.1"
 description = "A customizable Git workspace"
+authors = ["996wuxian"]
+repository = "https://github.com/996wuxian/easygit"
+homepage = "https://github.com/996wuxian/easygit"
 edition = "2021"
 
 [lib]
@@ -12,10 +15,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "~2.11.5", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls", "system-proxy"] }
+semver = "1"
+sha2 = "0.10"
 tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]

@@ -1,0 +1,29 @@
+.dialog.about-dialog { width: 560px; }
+.about-identity { display: flex; gap: 14px; align-items: center; padding: 8px 0 20px; }
+.about-identity img { width: 48px; height: 48px; border-radius: 12px; }
+.about-identity h3 { margin: 0; font-size: 19px; font-weight: 600; }
+.about-identity h3 span { margin-left: 8px; color: var(--text-muted); font: 11px var(--mono); }
+.about-identity p { margin: 6px 0 0; color: var(--text-muted); font-size: 11px; }
+.about-details { margin: 0 0 20px; display: grid; gap: 14px; }
+.about-details > div { display: grid; grid-template-columns: 66px minmax(0, 1fr); align-items: start; gap: 10px; font-size: 11px; }
+.about-details dt { color: var(--text-muted); line-height: 1.8; }
+.about-details dd { margin: 0; min-width: 0; }
+.about-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; text-align: left; color: var(--primary); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.about-link svg { flex-shrink: 0; }
+.app-update-section { padding-top: 18px; border-top: 1px solid var(--border); }
+.app-update-heading, .app-update-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.app-update-heading h3 { margin: 0; font-size: 13px; font-weight: 550; }
+.app-update-heading button, .app-update-actions button { font-size: 11px; }
+.app-update-status { display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 18px 0 10px; }
+.app-update-hint, .app-update-progress small, .app-update-downloaded small { color: var(--text-muted); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.app-update-progress { display: grid; gap: 8px; margin: 16px 0; }
+.app-update-progress > div { display: flex; justify-content: space-between; font-size: 11px; }
+.app-update-progress progress { width: 100%; height: 7px; accent-color: var(--primary); }
+.app-update-downloaded { display: grid; gap: 8px; margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.app-update-downloaded strong { display: flex; align-items: center; gap: 6px; color: var(--success); font-size: 12px; }
+.app-update-downloaded > span { font: 11px var(--mono); overflow-wrap: anywhere; }
+.app-update-error { margin: 14px 0; color: var(--danger); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.app-update-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 18px; }
+button.about-app { width: 100%; text-align: left; }
+button.about-app > div { flex: 1; min-width: 0; }
+button.about-app:hover { background: var(--bg-card-hover); }

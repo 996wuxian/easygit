@@ -14,13 +14,16 @@ import { CommitDetailsDialog } from './components/commits/CommitDetailsDialog';
 import { OperationBanner } from './components/OperationBanner';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
+import { AboutDialog } from './components/AboutDialog';
+import { APP_VERSION } from './services/appInfo';
+import { useAppUpdates } from './services/useAppUpdates';
 import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } from './services/git';
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { commitStatus } from './components/commits/model';
 import { useRepository, type RecentRepository } from './services/useRepository';
 import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
 
-type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'branches' | 'create-branch' | null;
+type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | null;
 type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
 const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
@@ -50,6 +53,7 @@ function readCommitDrafts(): Record<string, string> {
 
 export default function App({ onReady }: { onReady: () => void }) {
   const repo = useRepository(onReady);
+  const updates = useAppUpdates();
   const panels = usePanelLayout();
   const { snapshot, hasRepository, busy, syncing, notify } = repo;
   const [theme, setTheme] = useState(readTheme);
@@ -473,7 +477,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       <button className="settings-link" onClick={() => setModal('ai-settings')}><IconKey size={19} /><span><strong>AI 提交信息</strong><small>{aiSettings.apiKey ? '已配置第三方 AI 服务' : '配置 API Key，按差异生成提交信息'}</small></span><IconChevronRight size={17} /></button>
       <button className="settings-link" onClick={() => setModal('data-settings')}><IconFolder size={19} /><span><strong>数据存储</strong><small>查看、打开或迁移本机数据目录</small></span><IconChevronRight size={17} /></button>
       <button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button>
-      <div className="about-app"><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>0.1.0</span></strong><p>本地 Git 客户端。</p></div><span>Tauri + React</span></div>
+      <button className="about-app" aria-label="关于 easygit 与版本更新" onClick={() => setModal('about')}><img src="/brand/esaygit-icon.png" alt="" /><div><strong>easygit <span>v{APP_VERSION}</span></strong><p>{updates.info?.hasUpdate ? `发现新版本 v${updates.info.latestVersion}` : '关于、下载与版本更新'}</p></div><IconChevronRight size={17} /></button>
     </Dialog>}
 
     {modal === 'ai-settings' && <Dialog title="AI 提交信息" onClose={closeModal}>
@@ -491,6 +495,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     </Dialog>}
 
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
+    {modal === 'about' && <AboutDialog updates={updates} onClose={closeModal} />}
 
     {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.sourceRemote}:${mergeRequest.source}:${mergeRequest.targetRemote}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} sourceRemote={mergeRequest.sourceRemote} target={mergeRequest.target} targetRemote={mergeRequest.targetRemote} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
 
