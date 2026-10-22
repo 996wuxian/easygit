@@ -1,5 +1,199 @@
 use super::{run, GitCommit, GitCommitRef, GitUpstream};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::Path};
+
+#[derive(Deserialize)]
+pub struct HistoryReference {
+    pub name: String,
+    pub remote: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQuery {
+    pub reference: Option<HistoryReference>,
+    pub query: String,
+    pub offset: u32,
+    pub expected_key: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPage {
+    pub commits: Vec<GitCommit>,
+    pub next_offset: Option<u32>,
+    pub key: String,
+}
+
+fn excluded(root: &Path, tip: &str, other: Option<&str>) -> Result<HashSet<String>, String> {
+    if other == Some(tip) {
+        return Ok(HashSet::new());
+    }
+    let mut args = vec!["rev-list", tip];
+    if let Some(other) = other {
+        args.extend(["--not", other]);
+    }
+    Ok(super::run_text(root, &args)?
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+pub fn history_page(path: &str, query: HistoryQuery) -> Result<HistoryPage, String> {
+    if query.query.len() > 256 || query.offset > 1_000_000 {
+        return Err("历史查询范围或关键词过长。".into());
+    }
+    super::with_repository(path, |root| {
+        let head = super::optional_text(root, &["rev-parse", "--verify", "HEAD"])?;
+        let branch = super::optional_text(root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?
+            .unwrap_or_else(|| "HEAD".into());
+        let upstream_name = super::optional_text(
+            root,
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        )?;
+        let upstream = match &upstream_name {
+            Some(_) => {
+                super::optional_text(root, &["rev-parse", "--verify", "@{upstream}^{commit}"])?
+            }
+            None => None,
+        };
+        let selected = query
+            .reference
+            .as_ref()
+            .map(|reference| super::merge::branch_head(root, &reference.name, reference.remote))
+            .transpose()?;
+        let scope = selected.as_ref().or(head.as_ref());
+        let key = super::revision::hash(&(
+            &head,
+            &branch,
+            &upstream_name,
+            &upstream,
+            &selected,
+            query.query.trim(),
+        ));
+        if query
+            .expected_key
+            .as_ref()
+            .is_some_and(|expected| *expected != key)
+        {
+            return Err("分支历史已变化，请刷新历史后再翻页。".into());
+        }
+        let Some(scope) = scope else {
+            return Ok(HistoryPage {
+                commits: Vec::new(),
+                next_offset: None,
+                key,
+            });
+        };
+        let skip = format!("--skip={}", query.offset);
+        let mut args = vec![
+            "log",
+            "--topo-order",
+            "-26",
+            &skip,
+            "-z",
+            "--format=%H%x00%h%x00%s%x00%an%x00%aI%x00%P",
+            scope,
+        ];
+        if selected.is_none() {
+            if let Some(upstream) = &upstream {
+                args.push(upstream);
+            }
+        }
+        if !query.query.trim().is_empty() {
+            args.extend([
+                "--fixed-strings",
+                "--regexp-ignore-case",
+                "--grep",
+                query.query.trim(),
+            ]);
+        }
+        args.push("--");
+        let bytes = run(root, &args)?;
+        let fields: Vec<_> = bytes.split(|byte| *byte == 0).collect();
+        let mut commits: Vec<GitCommit> = fields
+            .chunks_exact(6)
+            .map(|fields| {
+                let text = |i| String::from_utf8_lossy(fields[i]).into_owned();
+                GitCommit {
+                    hash: text(0),
+                    short_hash: text(1),
+                    subject: text(2),
+                    author: text(3),
+                    date: text(4),
+                    parents: text(5).split_whitespace().map(str::to_owned).collect(),
+                    refs: Vec::new(),
+                    local: false,
+                    remote: false,
+                }
+            })
+            .collect();
+        let next_offset = (commits.len() > 25).then_some(query.offset + 25);
+        commits.truncate(25);
+        // User-driven pages/searches batch reachability by branch, never spawn
+        // ancestry queries for each row. The background snapshot stays at ten.
+        if !commits.is_empty() {
+            if selected.is_some() {
+                let not_local = excluded(root, scope, head.as_deref())?;
+                let not_remote = match upstream.as_deref() {
+                    Some(remote) => excluded(root, scope, Some(remote))?,
+                    None => HashSet::new(),
+                };
+                for commit in &mut commits {
+                    commit.local = head.is_some() && !not_local.contains(&commit.hash);
+                    commit.remote = upstream.is_some() && !not_remote.contains(&commit.hash);
+                }
+            } else if let Some(remote) = upstream
+                .as_ref()
+                .filter(|remote| Some(*remote) != head.as_ref())
+            {
+                let range = format!("{}...{remote}", head.as_deref().unwrap_or(scope));
+                let sides = super::run_text(root, &["rev-list", "--left-right", &range])?;
+                let left: HashSet<_> = sides
+                    .lines()
+                    .filter_map(|line| line.strip_prefix('<'))
+                    .collect();
+                let right: HashSet<_> = sides
+                    .lines()
+                    .filter_map(|line| line.strip_prefix('>'))
+                    .collect();
+                for commit in &mut commits {
+                    commit.local = !right.contains(commit.hash.as_str());
+                    commit.remote = !left.contains(commit.hash.as_str());
+                }
+            } else {
+                for commit in &mut commits {
+                    commit.local = true;
+                    commit.remote = upstream.is_some();
+                }
+            }
+            for commit in &mut commits {
+                if head.as_ref() == Some(&commit.hash) {
+                    commit.refs.push(GitCommitRef {
+                        name: branch.clone(),
+                        remote: false,
+                    });
+                }
+                if upstream.as_ref() == Some(&commit.hash) {
+                    commit.refs.push(GitCommitRef {
+                        name: upstream_name.clone().unwrap_or_default(),
+                        remote: true,
+                    });
+                }
+            }
+        }
+        Ok(HistoryPage {
+            commits,
+            next_offset,
+            key,
+        })
+    })
+}
 
 pub(super) fn read_history(
     root: &Path,

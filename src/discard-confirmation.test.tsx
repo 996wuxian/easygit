@@ -8,7 +8,7 @@ import { emptyRepository, git, type RepositorySnapshot } from './services/git';
 vi.mock('./services/git', async importOriginal => ({
   ...await importOriginal<typeof import('./services/git')>(),
   isDesktop: () => false,
-  git: { open: vi.fn(), bootstrap: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), diff: vi.fn(), commit: vi.fn(), checkout: vi.fn(), fetch: vi.fn() },
+  git: { stashes: vi.fn(), open: vi.fn(), bootstrap: vi.fn(), stage: vi.fn(), unstage: vi.fn(), discard: vi.fn(), diff: vi.fn(), commit: vi.fn(), checkout: vi.fn(), fetch: vi.fn() },
 }));
 vi.mock('./components/WindowControls', () => ({ WindowControls: () => null }));
 
@@ -25,6 +25,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.mocked(git.stashes).mockResolvedValue([]);
   localStorage.clear();
   localStorage.setItem('esaygit.recent.v1', JSON.stringify([workspace]));
   vi.mocked(git.open).mockResolvedValue(dirtySnapshot);

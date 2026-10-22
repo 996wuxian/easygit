@@ -42,17 +42,18 @@ pub fn act_on_commit(
             Some(1) => return Err("所选提交不属于当前本地分支。".to_owned()),
             _ => return Err(error_text(&ancestry)),
         }
-        if !run_text(
-            root,
-            &[
-                "for-each-ref",
-                "--format=%(refname)",
-                "--contains",
-                commit,
-                "refs/remotes",
-            ],
-        )?
-        .is_empty()
+        if !matches!(action, CommitAction::Revert)
+            && !run_text(
+                root,
+                &[
+                    "for-each-ref",
+                    "--format=%(refname)",
+                    "--contains",
+                    commit,
+                    "refs/remotes",
+                ],
+            )?
+            .is_empty()
         {
             return Err("该提交已包含在远端跟踪分支中，不能通过此菜单撤回。".to_owned());
         }
@@ -249,16 +250,14 @@ mod tests {
         assert!(act_on_commit(path, &tip, &tip, "main", CommitAction::Mixed)
             .unwrap_err()
             .contains("远端"));
-        assert!(
-            act_on_commit(path, &tip, &tip, "main", CommitAction::Revert)
-                .unwrap_err()
-                .contains("远端")
-        );
         assert_eq!(run_text(root, &["rev-parse", "HEAD"]).unwrap(), tip);
         assert_eq!(
             fs::read_to_string(root.join("file.txt")).unwrap(),
             "feature\n"
         );
+        let reverted = act_on_commit(path, &tip, &tip, "main", CommitAction::Revert).unwrap();
+        assert_eq!(reverted.commits[0].parents, vec![tip]);
+        assert_eq!(fs::read_to_string(root.join("file.txt")).unwrap(), "base\n");
     }
 
     #[test]

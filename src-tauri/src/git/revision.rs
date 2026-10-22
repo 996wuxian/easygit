@@ -6,6 +6,12 @@ use std::{
     path::Path,
 };
 
+pub(super) fn hash(value: &impl Hash) -> String {
+    let mut state = DefaultHasher::new();
+    value.hash(&mut state);
+    format!("{:016x}", state.finish())
+}
+
 fn hash_metadata(path: &Path, state: &mut impl Hasher) {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {

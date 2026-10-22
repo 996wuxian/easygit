@@ -2,6 +2,7 @@ mod git;
 mod process;
 mod project;
 mod storage;
+mod tray;
 
 use git::{BootstrapInfo, RepositorySnapshot};
 
@@ -270,10 +271,87 @@ async fn read_commit_files(path: String, commit: String) -> Result<Vec<String>, 
     blocking(move || git::commit_files(&path, &commit)).await
 }
 
+#[tauri::command]
+async fn list_stashes(path: String) -> Result<Vec<git::StashEntry>, String> {
+    blocking(move || git::list_stashes(&path)).await
+}
+#[tauri::command]
+async fn save_stash(
+    path: String,
+    message: String,
+    include_untracked: bool,
+) -> Result<git::PullResult, String> {
+    blocking(move || git::save_stash(&path, &message, include_untracked)).await
+}
+#[tauri::command]
+async fn act_on_stash(
+    path: String,
+    selector: String,
+    hash: String,
+    action: git::StashAction,
+) -> Result<git::PullResult, String> {
+    blocking(move || git::act_on_stash(&path, &selector, &hash, action)).await
+}
+#[tauri::command]
+async fn read_stash_diff(path: String, selector: String, hash: String) -> Result<String, String> {
+    blocking(move || git::stash_diff(&path, &selector, &hash)).await
+}
+#[tauri::command]
+async fn act_on_operation(
+    path: String,
+    request: git::OperationRequest,
+) -> Result<git::PullResult, String> {
+    blocking(move || git::act_on_operation(&path, request)).await
+}
+#[tauri::command]
+async fn read_history_page(
+    path: String,
+    query: git::HistoryQuery,
+) -> Result<git::HistoryPage, String> {
+    blocking(move || git::history_page(&path, query)).await
+}
+#[tauri::command]
+async fn read_commit_diff(path: String, commit: String, file: String) -> Result<String, String> {
+    blocking(move || git::commit_diff(&path, &commit, &file)).await
+}
+#[tauri::command]
+async fn compare_branches(
+    path: String,
+    base: String,
+    base_remote: bool,
+    target: String,
+    target_remote: bool,
+) -> Result<git::RevisionComparison, String> {
+    blocking(move || git::compare_branches(&path, &base, base_remote, &target, target_remote)).await
+}
+#[tauri::command]
+async fn read_comparison_diff(
+    path: String,
+    base: String,
+    target: String,
+    file: String,
+) -> Result<String, String> {
+    blocking(move || git::comparison_diff(&path, &base, &target, &file)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(tray::setup)
+        .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            tray::register_window_lifecycle,
+            tray::show_main_window,
+            tray::exit_app,
+            list_stashes,
+            save_stash,
+            act_on_stash,
+            read_stash_diff,
+            act_on_operation,
+            read_history_page,
+            read_commit_diff,
+            compare_branches,
+            read_comparison_diff,
             storage::read_app_data,
             storage::write_app_data,
             storage::read_ai_api_key,

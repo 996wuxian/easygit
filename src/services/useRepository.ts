@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot } from './git';
+import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
 
 export interface RecentRepository { name: string; path: string }
@@ -239,6 +239,17 @@ export function useRepository(onReady: () => void) {
     finally { busyRef.current = false; setBusy(false); }
   }, [notify]);
 
+  const runOutcome = async (label: string, action: (path: string) => Promise<PullResult>) => {
+    let outcome: PullResult | undefined;
+    const updated = await run(() => ({ message: outcome?.error ? `${label}未完成：${outcome.error}` : outcome?.conflicted ? '当前操作后仍有冲突，请在工作区继续处理' : label, error: Boolean(outcome?.error || outcome?.conflicted) }), async path => {
+      outcome = await action(path);
+      return outcome.snapshot;
+    });
+    return updated && Boolean(outcome && !outcome.error && !outcome.conflicted);
+  };
+  const saveStash = (message: string, includeUntracked: boolean) => runOutcome('已保存 stash', path => git.saveStash(path, message, includeUntracked));
+  const actOnStash = (entry: StashEntry, action: StashAction) => runOutcome(action === 'drop' ? '已删除 stash' : action === 'pop' ? '已恢复并删除 stash' : '已恢复 stash（保留记录）', path => git.actOnStash(path, entry, action));
+  const actOnOperation = (request: OperationRequest) => runOutcome(request.action === 'abort' ? '已取消当前 Git 操作' : request.action === 'skip' ? '已跳过当前提交' : '已继续当前 Git 操作', path => git.actOnOperation(path, request));
   const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths));
   const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths));
   const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回全部未暂存更改', path => git.discard(path, paths));
@@ -311,5 +322,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, merge, removeWorkspace };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

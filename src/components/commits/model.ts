@@ -3,7 +3,8 @@ import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services
 export function commitActionReason(snapshot: RepositorySnapshot, commit: GitCommit, action: CommitAction): string {
   if (snapshot.operation || snapshot.files.some(file => file.conflicted)) return '请先完成当前 Git 操作及冲突处理';
   if (snapshot.branch.startsWith('detached@')) return '请先切换到本地分支';
-  if (!commit.local || commit.remote) return '仅支持当前本地分支中未推送的提交';
+  if (!commit.local) return '所选提交不属于当前本地分支';
+  if (action !== 'revert' && commit.remote) return '已推送的提交请使用反向提交，保留共享历史';
   if (action !== 'revert' && commit.hash !== snapshot.head) return '仅支持撤回最新提交，较早提交请使用反向提交';
   if (action === 'revert' && commit.parents.length > 1) return '合并提交需要选择主线父提交，暂不支持反向提交';
   if (action === 'revert' && snapshot.files.length) return '反向提交需要干净的工作区，请先处理未提交更改';
@@ -11,6 +12,7 @@ export function commitActionReason(snapshot: RepositorySnapshot, commit: GitComm
 }
 
 export function commitStatus(commit: GitCommit, hasUpstream: boolean) {
+  if (!commit.local && !commit.remote) return { label: '其他分支', kind: 'other' };
   if (!hasUpstream) return { label: '本地提交', kind: 'local' };
   if (commit.local && commit.remote) return { label: '已同步', kind: 'synced' };
   return commit.remote ? { label: '待拉取', kind: 'incoming' } : { label: '待推送', kind: 'outgoing' };

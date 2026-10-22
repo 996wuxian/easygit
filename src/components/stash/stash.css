@@ -1,0 +1,18 @@
+.stash-panel-content { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0 12px 10px; }
+.stash-toolbar { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 11px; }
+.stash-toolbar > span { display: flex; gap: 5px; align-items: center; flex: 1; color: var(--text-muted); }
+.stash-toolbar .text-button { font-size: 11px; }
+.stash-save-form { display: grid; gap: 8px; padding: 8px 0 12px; font-size: 11px; border-bottom: 1px solid var(--border); }
+.stash-save-form > label { display: flex; align-items: center; gap: 5px; color: var(--text-muted); }
+.stash-save-form .text-field { font-size: 11px; padding: 7px; }
+.stash-save-form > div { display: flex; gap: 8px; }
+.stash-save-form button { font-size: 11px; }
+.stash-entry-list { overflow: auto; min-height: 0; }
+.stash-entry { display: block; width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 11px 4px; text-align: left; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.stash-entry:hover { color: var(--primary); background: var(--bg-card-hover); }
+.stash-entry strong { display: block; font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+.stash-entry small { display: block; font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+.stash-error { color: var(--danger, #b94040); font-size: 11px; }
+.stash-patch { height: min(52vh, 500px); min-height: 220px; border: 1px solid var(--border); border-radius: 8px; }
+.stash-dialog-actions { justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.stash-dialog-actions .text-button { margin-right: auto; }

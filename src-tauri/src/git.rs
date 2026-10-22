@@ -11,8 +11,17 @@ pub use conflicts::{read_conflict, resolve_conflict, ConflictFile, ConflictResol
 #[cfg(test)]
 mod checkout_tests;
 mod history;
+mod inspect;
 mod merge;
 mod merge_target;
+mod operations;
+mod stash;
+#[cfg(test)]
+mod workflow_tests;
+pub use history::{history_page, HistoryPage, HistoryQuery};
+pub use inspect::{commit_diff, compare_branches, comparison_diff, RevisionComparison};
+pub use operations::{act_on_operation, OperationRequest};
+pub use stash::{act_on_stash, list_stashes, save_stash, stash_diff, StashAction, StashEntry};
 #[cfg(test)]
 mod performance_tests;
 mod revision;
@@ -99,12 +108,14 @@ pub struct RepositorySnapshot {
     pub branches: Vec<GitBranch>,
     pub commits: Vec<GitCommit>,
     pub stash_count: usize,
+    pub stash_revision: String,
     pub remote: Option<String>,
     pub has_upstream: bool,
     pub upstream: Option<GitUpstream>,
     pub ahead: usize,
     pub behind: usize,
     pub operation: Option<String>,
+    pub operation_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -410,9 +421,8 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         Some(name) => optional_text(root, &["remote", "get-url", name])?,
         None => None,
     };
-    let stash_count = run_text(root, &["stash", "list", "--format=%H"])?
-        .lines()
-        .count();
+    let stash_data = run_text(root, &["stash", "list", "--format=%H"])?;
+    let stash_count = stash_data.lines().count();
     let git_dir = PathBuf::from(run_text(root, &["rev-parse", "--absolute-git-dir"])?);
     let operation = [
         ("rebase-merge", "rebase"),
@@ -425,6 +435,9 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
     .iter()
     .find(|(file, _)| git_dir.join(file).exists())
     .map(|(_, name)| (*name).to_owned());
+    let operation_token = operation
+        .as_deref()
+        .map(|kind| operations::token(&git_dir, kind));
     let display_path = root
         .to_string_lossy()
         .trim_start_matches("\\\\?\\")
@@ -443,12 +456,14 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         branches,
         commits,
         stash_count,
+        stash_revision: revision::hash(&stash_data),
         remote,
         has_upstream,
         upstream,
         ahead,
         behind,
         operation,
+        operation_token,
     };
     snapshot.revision = revision::fingerprint(root, &git_dir, &snapshot);
     Ok(snapshot)

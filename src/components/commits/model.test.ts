@@ -10,8 +10,9 @@ describe('commit history presentation', () => {
     expect(commitActionReason(state, commit('tip', ['old']), 'soft')).toBe('');
     expect(commitActionReason(state, commit('old', ['base']), 'mixed')).toContain('最新');
     expect(commitActionReason(state, commit('old', ['base']), 'revert')).toBe('');
-    expect(commitActionReason(state, commit('tip', ['old'], true, true), 'soft')).toContain('未推送');
-    expect(commitActionReason(state, commit('remote', ['old'], false, true), 'revert')).toContain('未推送');
+    expect(commitActionReason(state, commit('tip', ['old'], true, true), 'soft')).toContain('已推送');
+    expect(commitActionReason(state, commit('tip', ['old'], true, true), 'revert')).toBe('');
+    expect(commitActionReason(state, commit('remote', ['old'], false, true), 'revert')).toContain('不属于');
     expect(commitActionReason(state, commit('tip', ['left', 'right']), 'revert')).toContain('合并提交');
     expect(commitActionReason({ ...state, operation: 'merge' }, commit('tip', []), 'soft')).toContain('Git 操作');
     expect(commitActionReason({ ...state, branch: 'detached@tip' }, commit('tip', []), 'soft')).toContain('本地分支');

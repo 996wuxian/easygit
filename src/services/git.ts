@@ -14,6 +14,15 @@ export type CommitAction = 'soft' | 'mixed' | 'revert';
 export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string; parents: string[]; refs: GitCommitRef[]; local: boolean; remote: boolean }
 export interface MergePreview { source: string; sourceRemote: boolean; target: string; targetRemote: boolean; sourceHead: string; targetHead: string; localTarget: string; localTargetHead: string | null; targetNeedsSync: boolean; commits: GitCommit[]; commitCount: number }
 export interface MergeResult { snapshot: RepositorySnapshot; merged: boolean; conflicted: boolean; error: string | null }
+export interface BranchReference { name: string; remote: boolean }
+export interface StashEntry { hash: string; selector: string; message: string; date: string }
+export type StashAction = 'apply' | 'pop' | 'drop';
+export type OperationAction = 'continue' | 'abort' | 'skip';
+export interface OperationRequest { operation: string; token: string; revision: string; head: string | null; branch: string; action: OperationAction }
+export interface HistoryQuery { reference: BranchReference | null; query: string; offset: number; expectedKey: string | null }
+export interface HistoryPage { commits: GitCommit[]; nextOffset: number | null; key: string }
+export interface RevisionFile { path: string; oldPath: string | null; status: string }
+export interface RevisionComparison { base: string; target: string; files: RevisionFile[] }
 export interface RepositorySnapshot {
   revision?: string;
   path: string;
@@ -25,12 +34,14 @@ export interface RepositorySnapshot {
   branches: GitBranch[];
   commits: GitCommit[];
   stashCount: number;
+  stashRevision?: string;
   remote: string | null;
   hasUpstream: boolean;
   upstream: { name: string; hash: string } | null;
   ahead: number;
   behind: number;
   operation: string | null;
+  operationToken?: string | null;
 }
 export interface PullResult { snapshot: RepositorySnapshot; conflicted: boolean; error: string | null }
 export interface BootstrapResult { gitAvailable: boolean; gitVersion: string | null; error: string | null }
@@ -89,4 +100,13 @@ export const git = {
     return invokeCommand<MergeResult>('merge_branches', { path, request: { source, target, sourceRemote, targetRemote, sourceHead, targetHead, localTarget, localTargetHead } });
   },
   commitFiles: (path: string, commit: string) => invokeCommand<string[]>('read_commit_files', { path, commit }),
+  commitDiff: (path: string, commit: string, file: string) => invokeCommand<string>('read_commit_diff', { path, commit, file }),
+  history: (path: string, query: HistoryQuery) => invokeCommand<HistoryPage>('read_history_page', { path, query }),
+  compareBranches: (path: string, base: BranchReference, target: BranchReference) => invokeCommand<RevisionComparison>('compare_branches', { path, base: base.name, baseRemote: base.remote, target: target.name, targetRemote: target.remote }),
+  comparisonDiff: (path: string, base: string, target: string, file: string) => invokeCommand<string>('read_comparison_diff', { path, base, target, file }),
+  stashes: (path: string) => invokeCommand<StashEntry[]>('list_stashes', { path }),
+  saveStash: (path: string, message: string, includeUntracked: boolean) => invokeCommand<PullResult>('save_stash', { path, message, includeUntracked }),
+  stashDiff: (path: string, entry: StashEntry) => invokeCommand<string>('read_stash_diff', { path, selector: entry.selector, hash: entry.hash }),
+  actOnStash: (path: string, entry: StashEntry, action: StashAction) => invokeCommand<PullResult>('act_on_stash', { path, selector: entry.selector, hash: entry.hash, action }),
+  actOnOperation: (path: string, request: OperationRequest) => invokeCommand<PullResult>('act_on_operation', { path, request }),
 };

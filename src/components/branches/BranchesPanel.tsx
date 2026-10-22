@@ -4,9 +4,10 @@ import type { GitBranch, RepositorySnapshot } from '../../services/git';
 import { recentBranchGroups } from './model';
 import './branches.css';
 
-export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false }: {
+export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false, onCompare }: {
   snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string, remote: boolean) => void;
   onMergeRequest?: (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => void; mergeDisabled?: boolean;
+  onCompare?: () => void;
 }) {
   const [dragSource, setDragSource] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
@@ -47,6 +48,7 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
   });
   return <div className="branches-content">
     <div className="branch-filter-note">近 6 个月<span>按最后提交时间</span></div>
+    {onCompare && <button className="text-button branch-compare-entry" onClick={onCompare} disabled={snapshot.branches.length < 2}>对比分支代码</button>}
     {onMergeRequest && <div className="branch-merge-hint"><IconGitMerge size={13} />拖动分支到目标分支即可预览合并，支持本地和远程分支</div>}
     {currentFiltered && <div className="branch-current-note" title={snapshot.branch}>当前：<code>{snapshot.branch}</code><span>{snapshot.head ? '不在近期列表中' : '尚无提交'}</span></div>}
     {(['local', 'remote'] as const).map(type => {

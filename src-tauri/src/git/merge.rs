@@ -228,7 +228,20 @@ pub fn commit_files(path: &str, commit: &str) -> Result<Vec<String>, String> {
         let parents = run_text(root, &["rev-list", "--parents", "-n", "1", &hash])?;
         let first_parent = parents.split_whitespace().nth(1);
         let output = if let Some(parent) = first_parent {
-            run(root, &["diff", "--name-only", "-z", parent, &hash, "--"])?
+            run(
+                root,
+                &[
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "-M",
+                    "--name-only",
+                    "-z",
+                    parent,
+                    &hash,
+                    "--",
+                ],
+            )?
         } else {
             run(
                 root,
@@ -236,6 +249,9 @@ pub fn commit_files(path: &str, commit: &str) -> Result<Vec<String>, String> {
                     "diff-tree",
                     "--root",
                     "--no-commit-id",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "-M",
                     "--name-only",
                     "-r",
                     "-z",

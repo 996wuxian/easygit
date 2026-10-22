@@ -1,0 +1,27 @@
+.dialog.inspection-dialog { width: 1060px; }
+.inspection-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); margin: 12px 0; }
+.inspection-meta code { overflow-wrap: anywhere; }
+.inspection-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); height: min(54vh, 520px); min-height: 280px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.inspection-files { overflow: auto; border-right: 1px solid var(--border); padding: 6px; }
+.inspection-files button { display: block; width: 100%; text-align: left; padding: 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text); font: inherit; font-size: 11px; overflow-wrap: anywhere; cursor: pointer; }
+.inspection-files button:hover, .inspection-files button.active { background: var(--bg-card-hover); color: var(--primary); }
+.inspection-files small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+.revision-patch { overflow: auto; min-width: 0; min-height: 0; height: 100%; text-align: left; }
+.revision-patch .code-lines { min-width: max-content; font-size: 11px; }
+.revision-patch .code-line code { white-space: pre; }
+.patch-file-heading { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg-soft); color: var(--text-muted); font: 11px var(--mono); white-space: pre; }
+.inspection-state { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 100px; padding: 18px; font-size: 12px; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.comparison-controls { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 12px; margin: 12px 0; }
+.comparison-controls label { display: grid; gap: 6px; font-size: 11px; color: var(--text-muted); min-width: 0; }
+.comparison-controls select, .history-tools input { min-width: 0; width: 100%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: 6px; font: inherit; font-size: 11px; padding: 7px; }
+.history-tools { display: grid; grid-template-columns: minmax(85px, 1fr) minmax(90px, 1.3fr); align-items: center; gap: 6px; padding: 0 0 10px; }
+.history-tools input { height: 32px; border-radius: 7px; }
+.history-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px; font-size: 10px; color: var(--text-muted); }
+.history-pagination button { background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; color: var(--text); font: inherit; cursor: pointer; }
+.history-pagination button:disabled { opacity: .45; cursor: default; }
+.branch-compare-entry { margin: 0 12px 10px; }
+.operation-banner { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); background: var(--bg-card); border-radius: 9px; padding: 12px 14px; margin: 0 0 16px; font-size: 12px; }
+.operation-banner > div:first-child { flex: 1; min-width: 0; }
+.operation-banner p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
+.operation-banner .operation-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) { .inspection-body { grid-template-columns: 160px minmax(0, 1fr); } }
