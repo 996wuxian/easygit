@@ -818,6 +818,8 @@ mod tests {
     pub(super) fn repo() -> TempDir {
         let directory = tempfile::tempdir().unwrap();
         run(directory.path(), &["init", "-b", "main"]).unwrap();
+        // Fixtures use LF unless a test explicitly exercises CRLF conversion.
+        run(directory.path(), &["config", "core.autocrlf", "false"]).unwrap();
         run(directory.path(), &["config", "user.name", "esaygit test"]).unwrap();
         run(
             directory.path(),
