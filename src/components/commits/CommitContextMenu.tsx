@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowBackUp, IconCopy, IconFileText, IconInfoCircle, IconRestore, IconGitCompare, IconFlag, IconX } from '@tabler/icons-react';
+import { IconArrowBackUp, IconCopy, IconFileText, IconInfoCircle, IconRestore, IconGitCompare, IconFlag, IconX, IconGitCherryPick } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
-import { commitActionReason } from './model';
+import { cherryPickReason, commitActionReason } from './model';
 
-export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSelect, onAction, notify, compareBase, onMarkBase, onCompare, onClearBase }: {
+export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSelect, onAction, notify, compareBase, onMarkBase, onCompare, onClearBase, onCherryPick }: {
   commit: GitCommit; snapshot: RepositorySnapshot; x: number; y: number; busy: boolean;
   onClose: () => void; onSelect: () => void; onAction: (action: CommitAction) => void;
   notify: (message: string, error?: boolean) => void;
   compareBase?: GitCommit | null; onMarkBase?: () => void; onCompare?: () => void; onClearBase?: () => void;
+  onCherryPick?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: x, top: y });
@@ -67,6 +68,11 @@ export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSel
     <button role="menuitem" onClick={() => copy(commit.hash, '完整 SHA')}><IconCopy size={15} />复制完整 SHA</button>
     <button role="menuitem" onClick={() => copy(commit.shortHash, '短 SHA')}><IconCopy size={15} />复制短 SHA</button>
     <div className="commit-context-divider" role="separator" />
+    {onCherryPick && <>
+      <button role="menuitem" disabled={busy || Boolean(cherryPickReason(snapshot, commit))} onClick={() => { onClose(); onCherryPick(); }}><IconGitCherryPick size={15} />拣选到当前分支…</button>
+      <div className="commit-context-note">{cherryPickReason(snapshot, commit) || `将此提交应用到 ${snapshot.branch}`}</div>
+      <div className="commit-context-divider" role="separator" />
+    </>}
     {items.map(({ action, label, icon: Icon }) => {
       const reason = busy ? '仓库操作正在进行中' : commitActionReason(snapshot, commit, action);
       return <button role="menuitem" key={action} disabled={Boolean(reason)} title={reason || label} onClick={() => { onClose(); onAction(action); }}><Icon size={15} />{label}</button>;

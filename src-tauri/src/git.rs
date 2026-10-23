@@ -1,7 +1,9 @@
 use serde::Serialize;
 mod branches;
+mod cherry_pick;
 mod commit_actions;
 pub use branches::{manage_branch, read_branch_info, BranchInfo, BranchRequest};
+pub use cherry_pick::cherry_pick;
 mod comparison;
 mod diff_blocks;
 pub use diff_blocks::{discard_diff_block, DiffBlock};

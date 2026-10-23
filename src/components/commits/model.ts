@@ -1,5 +1,14 @@
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
 
+export function cherryPickReason(snapshot: RepositorySnapshot, commit: GitCommit): string {
+  if (snapshot.operation || snapshot.files.some(file => file.conflicted)) return '请先完成当前 Git 操作及冲突处理';
+  if (!snapshot.head || !snapshot.branch || snapshot.branch.startsWith('detached@')) return '请先切换到已有提交的本地分支';
+  if (commit.parents.length > 1) return '合并提交需要指定主线父提交，暂不支持拣选';
+  if (commit.local || commit.hash === snapshot.head) return '当前分支已包含此提交，无需重复拣选';
+  if (snapshot.files.length) return '拣选提交需要干净的工作区，请先提交或保存更改';
+  return '';
+}
+
 export function commitActionReason(snapshot: RepositorySnapshot, commit: GitCommit, action: CommitAction): string {
   if (snapshot.operation || snapshot.files.some(file => file.conflicted)) return '请先完成当前 Git 操作及冲突处理';
   if (snapshot.branch.startsWith('detached@')) return '请先切换到本地分支';

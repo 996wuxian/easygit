@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconArrowDown, IconArrowUp, IconCloud, IconGitBranch, IconHistory, IconFlag, IconX } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
-import { buildCommitGraph, commitStatus } from './model';
+import { buildCommitGraph, cherryPickReason, commitStatus } from './model';
 import { CommitContextMenu } from './CommitContextMenu';
-import { CommitActionDialog } from './CommitActionDialog';
+import { CommitActionDialog, type CommitDialogAction } from './CommitActionDialog';
 import { CommitCompareDialog } from './CommitCompareDialog';
 import { branchKey, useCommitHistory } from './useCommitHistory';
 import { SelectMenu } from '../SelectMenu';
@@ -18,13 +18,14 @@ export function CommitRefs({ commit }: { commit: GitCommit }) {
   </span>)}</span>;
 }
 
-export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
+export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onCherryPick }: {
   snapshot: RepositorySnapshot; onSelect: (commit: GitCommit) => void; busy: boolean;
   onAction: (commit: GitCommit, expectedHead: string, expectedBranch: string, action: CommitAction) => Promise<boolean>;
   notify: (message: string, error?: boolean) => void;
+  onCherryPick?: (commit: GitCommit, expectedHead: string, expectedBranch: string) => Promise<boolean>;
 }) {
   const [menu, setMenu] = useState<{ commit: GitCommit; x: number; y: number } | null>(null);
-  const [confirmation, setConfirmation] = useState<{ commit: GitCommit; action: CommitAction; head: string; branch: string } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ commit: GitCommit; action: CommitDialogAction; head: string; branch: string } | null>(null);
   const [compareBase, setCompareBase] = useState<GitCommit | null>(null);
   const [comparison, setComparison] = useState<{ base: GitCommit; target: GitCommit } | null>(null);
   useEffect(() => { setCompareBase(null); setComparison(null); }, [snapshot.path]);
@@ -79,12 +80,17 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
     {overflow.tooltip}
     {menu && <CommitContextMenu {...menu} snapshot={snapshot} busy={busy} onClose={() => setMenu(null)} onSelect={() => onSelect(menu.commit)} notify={notify}
       compareBase={compareBase} onMarkBase={() => setCompareBase(menu.commit)} onClearBase={() => setCompareBase(null)} onCompare={() => { if (compareBase) setComparison({ base: compareBase, target: menu.commit }); }}
+      onCherryPick={onCherryPick ? () => { if (snapshot.head) setConfirmation({ commit: menu.commit, action: 'cherry-pick', head: snapshot.head, branch: snapshot.branch }); } : undefined}
       onAction={action => { if (snapshot.head) setConfirmation({ commit: menu.commit, action, head: snapshot.head, branch: snapshot.branch }); }} />}
     {confirmation && createPortal(<CommitActionDialog {...confirmation} busy={busy} stale={confirmation.head !== snapshot.head || confirmation.branch !== snapshot.branch}
+      targetBranch={confirmation.branch} disabledReason={confirmation.action === 'cherry-pick' ? cherryPickReason(snapshot, confirmation.commit) : ''}
       onCancel={() => setConfirmation(null)} onConfirm={() => {
-        if (runningRef.current || busy) return;
+        if (runningRef.current || busy || confirmation.head !== snapshot.head || confirmation.branch !== snapshot.branch || (confirmation.action === 'cherry-pick' && cherryPickReason(snapshot, confirmation.commit))) return;
         runningRef.current = true;
-        void onAction(confirmation.commit, confirmation.head, confirmation.branch, confirmation.action)
+        const operation = confirmation.action === 'cherry-pick'
+          ? onCherryPick?.(confirmation.commit, confirmation.head, confirmation.branch) ?? Promise.resolve(false)
+          : onAction(confirmation.commit, confirmation.head, confirmation.branch, confirmation.action);
+        void operation
           .then(success => { if (success) setConfirmation(null); })
           .finally(() => { runningRef.current = false; });
       }} />, document.body)}

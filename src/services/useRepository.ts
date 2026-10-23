@@ -258,6 +258,17 @@ export function useRepository(onReady: () => void) {
   const resolveConflict = (file: string, revision: string, resolution: ConflictResolution, content?: string) => run('冲突已解决并暂存', path => git.resolveConflict(path, file, revision, resolution, content));
   const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
   const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
+  const cherryPick = async (expectedPath: string, commit: string, expectedHead: string, expectedBranch: string) => {
+    if (snapshotRef.current.path !== expectedPath) return false;
+    let outcome: PullResult | undefined;
+    const updated = await run(next => ({
+      message: next.operation === 'cherry-pick'
+        ? outcome?.conflicted ? '拣选遇到冲突，请解决并暂存后继续，也可跳过或取消操作' : '拣选已暂停，请查看操作提示；没有新更改时可跳过当前提交'
+        : outcome?.error ? `拣选未完成：${outcome.error}` : `已拣选提交到 ${next.branch}`,
+      error: Boolean(outcome?.error || outcome?.conflicted),
+    }), async path => { outcome = await git.cherryPick(path, commit, expectedHead, expectedBranch); return outcome.snapshot; });
+    return updated && Boolean(outcome && (outcome.snapshot.operation === 'cherry-pick' || !outcome.error));
+  };
   const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote));
   const createBranch = (branch: string) => {
     const base = snapshotRef.current.branch || '当前提交';
@@ -328,5 +339,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

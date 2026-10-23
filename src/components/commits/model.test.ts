@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { emptyRepository, type GitCommit } from '../../services/git';
-import { buildCommitGraph, commitActionReason, commitStatus } from './model';
+import { buildCommitGraph, cherryPickReason, commitActionReason, commitStatus } from './model';
 
 const commit = (hash: string, parents: string[], local = true, remote = false): GitCommit => ({ hash, shortHash: hash, subject: hash, author: 'Author', date: '2026-10-21T00:00:00Z', parents, refs: [], local, remote });
 
 describe('commit history presentation', () => {
+  it('permits picking commits from other branches and protects existing history and merge commits', () => {
+    const state = { ...emptyRepository(), branch: 'main', head: 'tip' };
+    expect(cherryPickReason(state, commit('other', ['base'], false, true))).toBe('');
+    expect(cherryPickReason(state, commit('old', ['base']))).toContain('已包含');
+    expect(cherryPickReason(state, commit('merge', ['one', 'two'], false))).toContain('主线');
+    expect(cherryPickReason({ ...state, branch: 'detached@tip' }, commit('other', [], false))).toContain('本地分支');
+    expect(cherryPickReason({ ...state, operation: 'rebase' }, commit('other', [], false))).toContain('Git 操作');
+  });
   it('limits undo to the unpublished tip and permits reverting older unpublished commits only when clean', () => {
     const state = { ...emptyRepository(), branch: 'main', head: 'tip' };
     expect(commitActionReason(state, commit('tip', ['old']), 'soft')).toBe('');

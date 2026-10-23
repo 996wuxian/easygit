@@ -246,6 +246,16 @@ async fn act_on_commit(
 }
 
 #[tauri::command]
+async fn cherry_pick_commit(
+    path: String,
+    commit: String,
+    expected_head: String,
+    expected_branch: String,
+) -> Result<git::PullResult, String> {
+    blocking(move || git::cherry_pick(&path, &commit, &expected_head, &expected_branch)).await
+}
+
+#[tauri::command]
 async fn checkout_branch(
     path: String,
     branch: String,
@@ -434,6 +444,7 @@ pub fn run() {
             resolve_conflict,
             create_commit,
             act_on_commit,
+            cherry_pick_commit,
             checkout_branch,
             create_branch,
             read_branch_info,
