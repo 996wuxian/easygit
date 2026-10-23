@@ -9,6 +9,12 @@ export interface GitFile {
   conflicted: boolean;
 }
 export interface GitBranch { name: string; current: boolean; remote: boolean; lastCommitDate: string | null }
+export interface BranchInfo { head: string; upstream: string | null }
+export type BranchAction = { kind: 'rename'; name: string } | { kind: 'delete' } | { kind: 'upstream'; upstream: string } | { kind: 'unset-upstream' };
+export interface BranchRequest {
+  branch: string; expectedHead: string; expectedUpstream: string | null;
+  expectedBranch: string; expectedCurrentHead: string | null; action: BranchAction;
+}
 export interface GitCommitRef { name: string; remote: boolean }
 export type CommitAction = 'soft' | 'mixed' | 'revert';
 export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; date: string; parents: string[]; refs: GitCommitRef[]; local: boolean; remote: boolean }
@@ -91,6 +97,8 @@ export const git = {
   actOnCommit: (path: string, commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => invokeCommand<RepositorySnapshot>('act_on_commit', { path, commit, expectedHead, expectedBranch, action }),
   checkout: (path: string, branch: string, remote = false) => invokeCommand<RepositorySnapshot>('checkout_branch', { path, branch, remote }),
   createBranch: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('create_branch', { path, branch }),
+  branchInfo: (path: string, branch: string) => invokeCommand<BranchInfo>('read_branch_info', { path, branch }),
+  manageBranch: (path: string, request: BranchRequest) => invokeCommand<RepositorySnapshot>('manage_branch', { path, request }),
   fetch: (path: string) => invokeCommand<RepositorySnapshot>('fetch_repository', { path }),
   pull: (path: string) => invokeCommand<PullResult>('pull_repository', { path }),
   push: (path: string) => invokeCommand<RepositorySnapshot>('push_repository', { path }),

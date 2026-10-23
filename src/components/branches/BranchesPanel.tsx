@@ -1,19 +1,26 @@
 import { useEffect, useState, type DragEvent } from 'react';
 import { useOverflowTooltip } from '../OverflowTooltip';
 import { IconArrowRight, IconCloud, IconGitBranch, IconGitMerge } from '@tabler/icons-react';
-import type { GitBranch, RepositorySnapshot } from '../../services/git';
+import type { BranchRequest, GitBranch, RepositorySnapshot } from '../../services/git';
+import { useBranchManagement } from './BranchManagement';
 import { recentBranchGroups } from './model';
 import './branches.css';
 
-export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false, onCompare, searchQuery = '' }: {
+export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false, onCompare, searchQuery = '', onBranchAction, notify }: {
   snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string, remote: boolean) => void;
   onMergeRequest?: (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => void; mergeDisabled?: boolean;
   onCompare?: () => void;
   searchQuery?: string;
+  onBranchAction?: (path: string, request: BranchRequest) => Promise<boolean>;
+  notify?: (message: string, error?: boolean) => void;
 }) {
   const [dragSource, setDragSource] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Pick<GitBranch, 'name' | 'remote'> | null>(null);
   const overflow = useOverflowTooltip();
+  const management = useBranchManagement({ snapshot, busy, onCheckout, onBranchAction, notify });
+  const openMenu = (branch: GitBranch, row: HTMLButtonElement, x: number, y: number) => {
+    row.focus({ preventScroll: true }); overflow.hide(); management.openMenu(branch, x, y);
+  };
   const showTooltip = (row: HTMLElement, branch: GitBranch) => overflow.show(row, branch.name, '.branch-name', `${branch.remote}:${branch.name}`);
   useEffect(() => { overflow.hide(); }, [snapshot.path, snapshot.branches, searchQuery]);
   const sameBranch = (left: Pick<GitBranch, 'name' | 'remote'> | null, right: GitBranch) => left?.name === right.name && left.remote === right.remote;
@@ -71,6 +78,14 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
             key={branch.name}
             {...dragProps(branch)}
             aria-disabled={busy || branch.current}
+            aria-haspopup="menu"
+            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); openMenu(branch, event.currentTarget, event.clientX, event.clientY); }}
+            onKeyDown={event => {
+              if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                event.preventDefault(); event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect(); openMenu(branch, event.currentTarget, rect.left + 24, rect.bottom);
+              }
+            }}
             aria-describedby={overflow.describedBy(`${branch.remote}:${branch.name}`)}
             onMouseEnter={event => showTooltip(event.currentTarget, branch)}
             onMouseLeave={() => overflow.hide()}
@@ -85,5 +100,6 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
     })}
     <div className="branch-bottom">{snapshot.remote ? <><span title={snapshot.remote}>{snapshot.ahead} 个待推送 · {snapshot.behind} 个待拉取</span><small>远程分支以上次获取更新为准</small></> : <span>尚未配置远程仓库</span>}</div>
     {overflow.tooltip}
+    {management.content}
   </div>;
 }

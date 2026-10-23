@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyRepository, git, isDesktop, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
+import { emptyRepository, git, isDesktop, type BranchRequest, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
 import { formatPullError } from './gitErrors';
 
@@ -263,6 +263,11 @@ export function useRepository(onReady: () => void) {
     const base = snapshotRef.current.branch || '当前提交';
     return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch));
   };
+  const manageBranch = (expectedPath: string, request: BranchRequest) => {
+    if (snapshotRef.current.path !== expectedPath) return Promise.resolve(false);
+    const labels = { rename: '分支已重命名', delete: '本地分支已删除', upstream: '已设置分支上游', 'unset-upstream': '已取消分支上游' };
+    return run(labels[request.action.kind], path => git.manageBranch(path, request));
+  };
   const pull = () => {
     let conflicted = false;
     let pullError: string | null = null;
@@ -323,5 +328,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

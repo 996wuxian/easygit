@@ -238,6 +238,19 @@ async fn fetch_repository(path: String) -> Result<RepositorySnapshot, String> {
 }
 
 #[tauri::command]
+async fn read_branch_info(path: String, branch: String) -> Result<git::BranchInfo, String> {
+    blocking(move || git::read_branch_info(&path, &branch)).await
+}
+
+#[tauri::command]
+async fn manage_branch(
+    path: String,
+    request: git::BranchRequest,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::manage_branch(&path, request)).await
+}
+
+#[tauri::command]
 async fn pull_repository(path: String) -> Result<git::PullResult, String> {
     blocking(move || git::pull_repository(&path)).await
 }
@@ -384,6 +397,8 @@ pub fn run() {
             act_on_commit,
             checkout_branch,
             create_branch,
+            read_branch_info,
+            manage_branch,
             fetch_repository,
             pull_repository,
             push_repository,

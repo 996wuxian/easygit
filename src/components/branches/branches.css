@@ -31,3 +31,6 @@ button.branch-row[aria-disabled="true"] { cursor: default; }
 .branch-search-input { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; color: var(--text-muted); }
 .branch-search-input > input { width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-soft); color: var(--text); font-size: 12px; }
 .branch-search-input > input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.branch-action-target { margin: 0 0 16px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.branch-action-target > code { color: var(--text); }
+.branch-action-dialog .field-label > .text-field { display: block; margin-top: 8px; }
