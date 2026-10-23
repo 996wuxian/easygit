@@ -99,7 +99,11 @@
 .activity-content { padding: 5px 17px; }
 .activity-row { display: flex; align-items: center; gap: 9px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 .activity-row:last-child { border-bottom: 0; }
-.activity-row > span { overflow-wrap: anywhere; }
+.activity-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.activity-row > svg { flex-shrink: 0; }
+.activity-error-details { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+.activity-error-details > summary { cursor: pointer; }
+.activity-error-details > pre { max-height: 160px; overflow: auto; margin: 6px 0 0; padding: 8px; border-radius: 6px; background: var(--bg-soft); white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.6 var(--mono); }
 .activity-row > time { flex-shrink: 0; margin-left: auto; color: var(--text-dim); font: 10px var(--mono); }
 .error-color { color: var(--danger); }
 .success-color { color: var(--success); }

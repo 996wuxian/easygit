@@ -293,7 +293,8 @@ describe('打开项目后获取远程更新', () => {
     expect(repository.snapshot).toBe(remote);
     expect(repository.busy).toBe(false);
     expect(repository.syncing).toBe(false);
-    expect(repository.notice).toEqual({ message: '获取远程更新失败：Error: offline', error: true });
+    expect(repository.notice).toEqual({ message: '获取远程更新失败：无法连接远程 Git 服务器。请检查网络、VPN 或代理设置，并确认服务器可以访问。', error: true });
+    expect(repository.activities[0].details).toBe('offline');
     vi.mocked(git.open).mockResolvedValue(updated);
     await act(async () => { void repository.fetch(); });
     expect(git.fetch).toHaveBeenCalledTimes(2);

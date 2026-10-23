@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type BranchRequest, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
-import { formatPullError } from './gitErrors';
+import { formatFetchError, formatPullError, gitErrorMessage } from './gitErrors';
 
 export interface RecentRepository { name: string; path: string }
-export interface Activity { id: string; label: string; time: string; error?: boolean }
+export interface Activity { id: string; label: string; time: string; error?: boolean; details?: string }
 interface RemoteRequest { path: string; session: number; reading: boolean; promise: Promise<boolean>; complete: (updated: boolean) => void }
 interface RefreshRequest { path: string; token: number; promise: Promise<boolean>; notified: boolean; force: boolean }
 const RECENTS_KEY = 'esaygit.recent.v1';
@@ -35,9 +35,9 @@ export function useRepository(onReady: () => void) {
   const hasRepository = Boolean(snapshot.path);
   snapshotRef.current = snapshot;
 
-  const notify = useCallback((message: string, error = false) => {
+  const notify = useCallback((message: string, error = false, details?: string) => {
     setNotice({ message, error });
-    setActivities(items => [{ id: crypto.randomUUID(), label: message, error, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }, ...items].slice(0, 40));
+    setActivities(items => [{ id: crypto.randomUUID(), label: message, error, details, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }, ...items].slice(0, 40));
   }, []);
 
   const fetch = useCallback(() => {
@@ -59,7 +59,7 @@ export function useRepository(onReady: () => void) {
       if (remoteRequest.current === request) {
         remoteRequest.current = null;
         setRemoteSync(null);
-        notify(`获取远程更新失败：${String(error)}`, true);
+        notify(formatFetchError(error), true, gitErrorMessage(error));
       }
       request.complete(false);
     });
