@@ -6,6 +6,21 @@
 .history-summary small { font-size: 10px; color: var(--text-dim); }
 .history-row { display: flex; align-items: center; width: 100%; height: 56px; gap: 6px; padding: 0 6px 0 0; border-radius: 5px; text-align: left; }
 .history-row:hover { background: var(--bg-soft); }
+.history-row.compare-base { background: color-mix(in srgb, var(--primary-soft) 70%, var(--bg-card)); border-radius: 6px; }
+.history-row.compare-base:hover { background: var(--primary-soft); }
+.history-compare-base { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--primary); background: var(--primary-soft); }
+.history-compare-base > svg { flex-shrink: 0; }
+.history-compare-base > div { flex: 1; min-width: 0; }
+.history-compare-base span, .history-compare-base small { display: block; font-size: 10px; color: var(--text-muted); }
+.history-compare-base strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 4px 0; color: var(--text); font-size: 11px; font-weight: 500; }
+.commit-compare-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 8px; }
+.commit-compare-controls > div { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; min-width: 0; }
+.commit-compare-controls span { color: var(--text-muted); font-size: 11px; }
+.commit-compare-controls code { color: var(--primary); font-size: 11px; }
+.commit-compare-controls strong { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; font-weight: 500; }
+.commit-compare-dialog > .dialog-description { margin-bottom: 8px; }
+.commit-compare-error { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .commit-compare-controls { grid-template-columns: minmax(0, 1fr); gap: 8px; } .commit-compare-controls > button { justify-self: start; } }
 .history-row:focus-visible { outline: 1px solid var(--text-muted); outline-offset: -1px; }
 .history-graph { flex-shrink: 0; overflow: visible; color: var(--history-local); }
 .history-graph path { fill: none; stroke: var(--text-dim); stroke-width: 1.4; opacity: .6; }

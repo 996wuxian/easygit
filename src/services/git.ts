@@ -112,6 +112,7 @@ export const git = {
   history: (path: string, query: HistoryQuery) => invokeCommand<HistoryPage>('read_history_page', { path, query }),
   compareBranches: (path: string, base: BranchReference, target: BranchReference) => invokeCommand<RevisionComparison>('compare_branches', { path, base: base.name, baseRemote: base.remote, target: target.name, targetRemote: target.remote }),
   comparisonDiff: (path: string, base: string, target: string, file: string) => invokeCommand<string>('read_comparison_diff', { path, base, target, file }),
+  compareCommits: (path: string, base: string, target: string) => invokeCommand<RevisionComparison>('compare_commits', { path, base, target }),
   stashes: (path: string) => invokeCommand<StashEntry[]>('list_stashes', { path }),
   saveStash: (path: string, message: string, includeUntracked: boolean) => invokeCommand<PullResult>('save_stash', { path, message, includeUntracked }),
   stashDiff: (path: string, entry: StashEntry) => invokeCommand<string>('read_stash_diff', { path, selector: entry.selector, hash: entry.hash }),

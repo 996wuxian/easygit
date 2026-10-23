@@ -348,6 +348,15 @@ async fn read_comparison_diff(
     blocking(move || git::comparison_diff(&path, &base, &target, &file)).await
 }
 
+#[tauri::command]
+async fn compare_commits(
+    path: String,
+    base: String,
+    target: String,
+) -> Result<git::RevisionComparison, String> {
+    blocking(move || git::compare_commits(&path, &base, &target)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -370,6 +379,7 @@ pub fn run() {
             read_history_page,
             read_commit_diff,
             compare_branches,
+            compare_commits,
             read_comparison_diff,
             storage::read_app_data,
             storage::write_app_data,

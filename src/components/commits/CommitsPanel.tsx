@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconArrowUp, IconCloud, IconGitBranch, IconHistory } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconCloud, IconGitBranch, IconHistory, IconFlag, IconX } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
 import { buildCommitGraph, commitStatus } from './model';
 import { CommitContextMenu } from './CommitContextMenu';
 import { CommitActionDialog } from './CommitActionDialog';
+import { CommitCompareDialog } from './CommitCompareDialog';
 import { branchKey, useCommitHistory } from './useCommitHistory';
 import { SelectMenu } from '../SelectMenu';
 import { useOverflowTooltip } from '../OverflowTooltip';
@@ -24,6 +25,9 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
 }) {
   const [menu, setMenu] = useState<{ commit: GitCommit; x: number; y: number } | null>(null);
   const [confirmation, setConfirmation] = useState<{ commit: GitCommit; action: CommitAction; head: string; branch: string } | null>(null);
+  const [compareBase, setCompareBase] = useState<GitCommit | null>(null);
+  const [comparison, setComparison] = useState<{ base: GitCommit; target: GitCommit } | null>(null);
+  useEffect(() => { setCompareBase(null); setComparison(null); }, [snapshot.path]);
   const runningRef = useRef(false);
   const overflow = useOverflowTooltip();
   useEffect(() => setMenu(null), [snapshot.path, snapshot.head]);
@@ -37,19 +41,24 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
       <span>{snapshot.hasUpstream ? <><span title="本地领先上游，等待推送"><IconArrowUp size={12} />{snapshot.ahead}</span><span title="上游领先本地，等待拉取"><IconArrowDown size={12} />{snapshot.behind}</span></> : '本地历史'}</span>
       <small title="远端跟踪分支保存在本机；点击获取更新可刷新远端位置">{snapshot.upstream ? '远端位置以上次获取为准' : '未设置上游分支'}</small>
     </div>}
+    {compareBase && <div className="history-compare-base" role="status" onMouseEnter={event => overflow.show(event.currentTarget, `${compareBase.hash}\n${compareBase.subject}`, 'strong', 'compare-base')} onMouseLeave={overflow.hide} aria-describedby={overflow.describedBy('compare-base')}>
+      <IconFlag size={14} /><div><span>对比基准 · <code>{compareBase.shortHash}</code></span><strong>{compareBase.subject}</strong><small>右键另一条提交，选择“与基准提交对比”</small></div>
+      <button className="icon-button" aria-label="清除对比基准" onClick={() => { overflow.hide(); setCompareBase(null); }}><IconX size={15} /></button>
+    </div>}
     <div className="history-list">{commits.map((commit, index) => {
       const status = commitStatus(commit, snapshot.hasUpstream);
       const detail = `${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString('zh-CN')}\n${status.label} · ${commit.hash}${commit.refs.length ? `\n${commit.refs.map(ref => `${ref.remote ? '远程' : '本地'}：${ref.name}`).join('\n')}` : ''}`;
       const showTooltip = (row: HTMLButtonElement) => overflow.show(row, detail, '.history-row-title > strong, .history-author, .commit-ref > span', commit.hash);
-      return <button className={`history-row ${status.kind}`} key={commit.hash} onClick={() => { overflow.hide(); onSelect(commit); }}
+      return <button className={`history-row ${status.kind}${compareBase?.hash === commit.hash ? ' compare-base' : ''}`} key={commit.hash} onClick={() => { overflow.hide(); onSelect(commit); }}
         aria-describedby={overflow.describedBy(commit.hash)}
         onMouseEnter={event => showTooltip(event.currentTarget)} onMouseLeave={overflow.hide}
         onFocus={event => showTooltip(event.currentTarget)} onBlur={overflow.hide}
-        aria-haspopup="menu" onContextMenu={event => { event.preventDefault(); event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); setMenu({ commit, x: event.clientX, y: event.clientY }); }}
+        aria-haspopup="menu" onContextMenu={event => { event.preventDefault(); event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); overflow.hide(); setMenu({ commit, x: event.clientX, y: event.clientY }); }}
         onKeyDown={event => {
           if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
             event.preventDefault(); event.stopPropagation();
             const bounds = event.currentTarget.getBoundingClientRect();
+            overflow.hide();
             setMenu({ commit, x: bounds.left + 24, y: bounds.bottom });
           }
         }}>
@@ -69,6 +78,7 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
     <div className="history-pagination">{history.paged ? <><button aria-label="上一页提交" disabled={history.loading || history.offset === 0} onClick={history.previous}>上一页</button><span>{history.loading ? '正在读取…' : `第 ${Math.floor(history.offset / 25) + 1} 页`}</span><button aria-label="下一页提交" disabled={history.loading || history.nextOffset === null} onClick={history.next}>下一页</button><button onClick={history.refresh} disabled={history.loading}>刷新</button></> : commits.length >= 10 && <button onClick={history.expand}>更多历史</button>}</div>
     {overflow.tooltip}
     {menu && <CommitContextMenu {...menu} snapshot={snapshot} busy={busy} onClose={() => setMenu(null)} onSelect={() => onSelect(menu.commit)} notify={notify}
+      compareBase={compareBase} onMarkBase={() => setCompareBase(menu.commit)} onClearBase={() => setCompareBase(null)} onCompare={() => { if (compareBase) setComparison({ base: compareBase, target: menu.commit }); }}
       onAction={action => { if (snapshot.head) setConfirmation({ commit: menu.commit, action, head: snapshot.head, branch: snapshot.branch }); }} />}
     {confirmation && createPortal(<CommitActionDialog {...confirmation} busy={busy} stale={confirmation.head !== snapshot.head || confirmation.branch !== snapshot.branch}
       onCancel={() => setConfirmation(null)} onConfirm={() => {
@@ -78,5 +88,6 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
           .then(success => { if (success) setConfirmation(null); })
           .finally(() => { runningRef.current = false; });
       }} />, document.body)}
+    {comparison && createPortal(<CommitCompareDialog path={snapshot.path} {...comparison} onClose={() => setComparison(null)} />, document.body)}
   </div>;
 }

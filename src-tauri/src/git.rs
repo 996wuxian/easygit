@@ -21,7 +21,9 @@ mod stash;
 #[cfg(test)]
 mod workflow_tests;
 pub use history::{history_page, HistoryPage, HistoryQuery};
-pub use inspect::{commit_diff, compare_branches, comparison_diff, RevisionComparison};
+pub use inspect::{
+    commit_diff, compare_branches, compare_commits, comparison_diff, RevisionComparison,
+};
 pub use operations::{act_on_operation, OperationRequest};
 pub use stash::{act_on_stash, list_stashes, save_stash, stash_diff, StashAction, StashEntry};
 #[cfg(test)]

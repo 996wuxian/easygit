@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowBackUp, IconCopy, IconFileText, IconInfoCircle, IconRestore } from '@tabler/icons-react';
+import { IconArrowBackUp, IconCopy, IconFileText, IconInfoCircle, IconRestore, IconGitCompare, IconFlag, IconX } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
 import { commitActionReason } from './model';
 
-export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSelect, onAction, notify }: {
+export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSelect, onAction, notify, compareBase, onMarkBase, onCompare, onClearBase }: {
   commit: GitCommit; snapshot: RepositorySnapshot; x: number; y: number; busy: boolean;
   onClose: () => void; onSelect: () => void; onAction: (action: CommitAction) => void;
   notify: (message: string, error?: boolean) => void;
+  compareBase?: GitCommit | null; onMarkBase?: () => void; onCompare?: () => void; onClearBase?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: x, top: y });
@@ -56,6 +57,12 @@ export function CommitContextMenu({ commit, snapshot, x, y, busy, onClose, onSel
     }}>
     <div className="commit-context-heading"><code>{commit.shortHash}</code><span>{commit.subject}</span></div>
     <button role="menuitem" onClick={() => { onClose(); onSelect(); }}><IconInfoCircle size={15} />查看提交详情</button>
+    {onMarkBase && <>
+      <button role="menuitem" disabled={compareBase?.hash === commit.hash} onClick={() => { onClose(); onMarkBase(); }}><IconFlag size={15} />设为对比基准</button>
+      <button role="menuitem" disabled={!compareBase || compareBase.hash === commit.hash} onClick={() => { onClose(); onCompare?.(); }}><IconGitCompare size={15} />与基准提交对比…</button>
+      {compareBase && <button role="menuitem" onClick={() => { onClose(); onClearBase?.(); }}><IconX size={15} />清除对比基准</button>}
+      <div className="commit-context-divider" role="separator" />
+    </>}
     <button role="menuitem" onClick={() => copy(commit.subject, '提交信息')}><IconFileText size={15} />复制提交信息</button>
     <button role="menuitem" onClick={() => copy(commit.hash, '完整 SHA')}><IconCopy size={15} />复制完整 SHA</button>
     <button role="menuitem" onClick={() => copy(commit.shortHash, '短 SHA')}><IconCopy size={15} />复制短 SHA</button>
