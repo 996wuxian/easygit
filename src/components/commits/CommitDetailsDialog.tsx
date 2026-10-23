@@ -24,7 +24,7 @@ export function CommitDetailsDialog({ path, commit, status, notify, onClose }: {
   }, [path, commit.hash, selected]);
   return <Dialog title="提交详情" className="inspection-dialog commit-detail" onClose={onClose}>
     <h3 className="commit-detail-heading" title={commit.subject}>{commit.subject}</h3>
-    <CommitRefs commit={commit} />
+    {commit.refs.length > 0 && <CommitRefs commit={commit} />}
     <div className="inspection-meta"><span>{commit.author} · {new Date(commit.date).toLocaleString('zh-CN')}</span><span>{status}</span><code>{commit.hash}</code><button className="icon-button" aria-label="复制提交 SHA" onClick={() => { void navigator.clipboard.writeText(commit.hash).then(() => notify('Commit SHA 已复制')).catch(() => notify('无法访问剪贴板', true)); }}><IconCopy size={15} /></button></div>
     {commit.parents.length > 1 && <p className="dialog-description">合并提交，显示相对第一父提交的代码变化。</p>}
     <div className="inspection-body"><div className="inspection-files" aria-label="提交涉及的文件">

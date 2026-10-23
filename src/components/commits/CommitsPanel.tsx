@@ -7,11 +7,12 @@ import { CommitContextMenu } from './CommitContextMenu';
 import { CommitActionDialog } from './CommitActionDialog';
 import { branchKey, useCommitHistory } from './useCommitHistory';
 import { SelectMenu } from '../SelectMenu';
+import { useOverflowTooltip } from '../OverflowTooltip';
 import './commits.css';
 import '../diff/inspection.css';
 
 export function CommitRefs({ commit }: { commit: GitCommit }) {
-  return <span className="commit-refs">{commit.refs.map(ref => <span className={`commit-ref ${ref.remote ? 'remote' : 'local'}`} key={`${ref.name}-${ref.remote}`} title={`${ref.remote ? '远端跟踪分支' : '本地分支'}：${ref.name}`}>
+  return <span className="commit-refs">{commit.refs.map(ref => <span className={`commit-ref ${ref.remote ? 'remote' : 'local'}`} key={`${ref.name}-${ref.remote}`}>
     {ref.remote ? <IconCloud size={12} /> : <IconGitBranch size={12} />}<span>{ref.name}</span>
   </span>)}</span>;
 }
@@ -24,6 +25,7 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
   const [menu, setMenu] = useState<{ commit: GitCommit; x: number; y: number } | null>(null);
   const [confirmation, setConfirmation] = useState<{ commit: GitCommit; action: CommitAction; head: string; branch: string } | null>(null);
   const runningRef = useRef(false);
+  const overflow = useOverflowTooltip();
   useEffect(() => setMenu(null), [snapshot.path, snapshot.head]);
   const history = useCommitHistory(snapshot);
   const commits = history.commits;
@@ -37,8 +39,12 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
     </div>}
     <div className="history-list">{commits.map((commit, index) => {
       const status = commitStatus(commit, snapshot.hasUpstream);
-      const detail = `${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString('zh-CN')}\n${status.label} · ${commit.hash}`;
-      return <button className={`history-row ${status.kind}`} key={commit.hash} onClick={() => onSelect(commit)} title={detail}
+      const detail = `${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString('zh-CN')}\n${status.label} · ${commit.hash}${commit.refs.length ? `\n${commit.refs.map(ref => `${ref.remote ? '远程' : '本地'}：${ref.name}`).join('\n')}` : ''}`;
+      const showTooltip = (row: HTMLButtonElement) => overflow.show(row, detail, '.history-row-title > strong, .history-author, .commit-ref > span', commit.hash);
+      return <button className={`history-row ${status.kind}`} key={commit.hash} onClick={() => { overflow.hide(); onSelect(commit); }}
+        aria-describedby={overflow.describedBy(commit.hash)}
+        onMouseEnter={event => showTooltip(event.currentTarget)} onMouseLeave={overflow.hide}
+        onFocus={event => showTooltip(event.currentTarget)} onBlur={overflow.hide}
         aria-haspopup="menu" onContextMenu={event => { event.preventDefault(); event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); setMenu({ commit, x: event.clientX, y: event.clientY }); }}
         onKeyDown={event => {
           if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
@@ -61,6 +67,7 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify }: {
     {history.error && <div className="history-range-note error-color" role="alert">{history.error}<button className="text-button" onClick={history.refresh}>刷新历史</button></div>}
     {!commits.length && !history.loading && !history.error && <div className="clean-state"><IconHistory size={28} stroke={1.3} /><strong>{history.paged ? '没有匹配提交' : '暂无提交'}</strong><span>{history.paged ? '试试其他关键词或分支' : '创建第一次提交后可查看记录'}</span></div>}
     <div className="history-pagination">{history.paged ? <><button aria-label="上一页提交" disabled={history.loading || history.offset === 0} onClick={history.previous}>上一页</button><span>{history.loading ? '正在读取…' : `第 ${Math.floor(history.offset / 25) + 1} 页`}</span><button aria-label="下一页提交" disabled={history.loading || history.nextOffset === null} onClick={history.next}>下一页</button><button onClick={history.refresh} disabled={history.loading}>刷新</button></> : commits.length >= 10 && <button onClick={history.expand}>更多历史</button>}</div>
+    {overflow.tooltip}
     {menu && <CommitContextMenu {...menu} snapshot={snapshot} busy={busy} onClose={() => setMenu(null)} onSelect={() => onSelect(menu.commit)} notify={notify}
       onAction={action => { if (snapshot.head) setConfirmation({ commit: menu.commit, action, head: snapshot.head, branch: snapshot.branch }); }} />}
     {confirmation && createPortal(<CommitActionDialog {...confirmation} busy={busy} stale={confirmation.head !== snapshot.head || confirmation.branch !== snapshot.branch}

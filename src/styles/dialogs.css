@@ -105,11 +105,11 @@
 .about-app strong > span { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 5px; }
 .about-app p { font-size: 11px; margin: 5px 0 0; color: var(--text-dim); }
 .about-app > span { font-size: 11px; color: var(--text-dim); margin-left: auto; }
-.commit-detail-heading { display: flex; align-items: center; gap: 9px; min-width: 0; margin-bottom: 11px; }
-.commit-detail-heading > svg { color: var(--text-muted); }
-.commit-detail-heading h3 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; font-size: 16px; font-weight: 500; line-height: 1.4; }
+.commit-detail > .dialog-heading { margin-bottom: 8px; }
+.commit-detail-heading { min-width: 0; margin: 0 0 6px; font-size: 16px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.commit-detail > .inspection-meta { margin: 4px 0 8px; }
 .commit-detail p { color: var(--text-muted); font-size: 11px; line-height: 1.4; margin: 6px 0 10px; }
-.commit-detail .commit-refs { margin-bottom: 7px; }
+.commit-detail .commit-refs { margin-bottom: 4px; }
 .commit-hash { display: flex; align-items: center; gap: 8px; padding: 9px; background: var(--bg-soft); border-radius: 6px; border: 1px solid var(--border); }
 .commit-hash code { flex: 1; min-width: 0; font-size: 11px; word-break: break-all; }
 .commit-files-label { margin-top: 12px; }
