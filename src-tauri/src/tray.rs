@@ -104,10 +104,5 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         if let Err(error) = window.hide() {
             eprintln!("无法隐藏 easygit：{error}");
         }
-    } else if matches!(event, WindowEvent::Resized(_)) && window.is_minimized().unwrap_or(false) {
-        // Native/taskbar minimize should behave like the custom titlebar button.
-        if let Err(error) = window.hide() {
-            eprintln!("无法最小化 easygit 到托盘：{error}");
-        }
     }
 }

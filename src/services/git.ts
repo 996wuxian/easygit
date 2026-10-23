@@ -83,6 +83,7 @@ export async function invokeCommand<T>(command: string, args?: Record<string, un
 export const git = {
   bootstrap: () => invokeCommand<BootstrapResult>('bootstrap'),
   open: (path: string) => invokeCommand<RepositorySnapshot>('open_repository', { path }),
+  pickDirectory: (defaultPath: string) => invokeCommand<string | null>('pick_repository_directory', { defaultPath: defaultPath.trim() || null }),
   openDirectory: (path: string) => invokeCommand<void>('open_repository_directory', { path }),
   diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
   comparison: (path: string, file: string, staged: boolean) => invokeCommand<FileComparison>('read_file_comparison', { path, file, staged }),

@@ -70,15 +70,30 @@ fn main() {
                         window.is_visible().unwrap() && window.is_maximized().unwrap()
                     });
                     window.minimize().unwrap();
-                    wait_for("native minimize hides", || !window.is_visible().unwrap());
+                    wait_for("native minimize stays on taskbar", || {
+                        window.is_minimized().unwrap()
+                    });
+                    assert!(
+                        window.is_visible().unwrap(),
+                        "minimizing must not hide the window"
+                    );
                     tray::show_main_window(app.clone()).unwrap();
                     wait_for("restore after minimize", || {
                         window.is_visible().unwrap() && !window.is_minimized().unwrap()
                     });
-                    window.hide().unwrap();
-                    wait_for("titlebar minimize hides", || !window.is_visible().unwrap());
+                    window.minimize().unwrap();
+                    wait_for("minimize before taskbar close", || {
+                        window.is_minimized().unwrap()
+                    });
+                    window.close().unwrap();
+                    wait_for("close minimized window hides", || {
+                        !window.is_visible().unwrap()
+                    });
+                    assert!(app.get_webview_window("main").is_some());
                     tray::show_main_window(app.clone()).unwrap();
-                    wait_for("restore after hide", || window.is_visible().unwrap());
+                    wait_for("restore after taskbar close", || {
+                        window.is_visible().unwrap() && !window.is_minimized().unwrap()
+                    });
                 }));
                 let passed = result.is_ok();
                 send.send(passed).unwrap();
@@ -94,7 +109,7 @@ fn main() {
         .unwrap();
     assert_eq!(app.run_return(|_, _| {}), 0);
     assert!(receive.recv_timeout(Duration::from_secs(2)).unwrap());
-    println!("PASS: tray created; close and native/titlebar minimize hide without destruction; restore preserves maximization; explicit quit exits.");
+    println!("PASS: minimize keeps the window on the taskbar; close hides without destruction, including from minimized state; tray restore preserves maximization; explicit quit exits.");
 }
 
 #[cfg(not(target_os = "windows"))]

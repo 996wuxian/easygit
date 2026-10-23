@@ -6,6 +6,7 @@ mod tray;
 mod updates;
 
 use git::{BootstrapInfo, RepositorySnapshot};
+use tauri_plugin_dialog::DialogExt;
 
 async fn blocking<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -29,6 +30,32 @@ async fn bootstrap() -> BootstrapInfo {
 #[tauri::command]
 async fn open_repository(path: String) -> Result<RepositorySnapshot, String> {
     blocking(move || git::open_repository(&path)).await
+}
+
+#[tauri::command]
+async fn pick_repository_directory(
+    window: tauri::WebviewWindow,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    blocking(move || {
+        let mut dialog = window
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("选择 Git 仓库文件夹");
+        if let Some(path) = default_path.filter(|path| std::path::Path::new(path).is_dir()) {
+            dialog = dialog.set_directory(path);
+        }
+        dialog
+            .blocking_pick_folder()
+            .map(|file| {
+                file.into_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .map_err(|error| error.to_string())
+            })
+            .transpose()
+    })
+    .await
 }
 
 #[tauri::command]
@@ -360,6 +387,7 @@ async fn compare_commits(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(updates::UpdateState::default())
         .setup(tray::setup)
         .on_window_event(tray::on_window_event)
@@ -390,6 +418,7 @@ pub fn run() {
             storage::open_data_directory,
             bootstrap,
             open_repository,
+            pick_repository_directory,
             open_repository_directory,
             read_project_scripts,
             run_project_script,

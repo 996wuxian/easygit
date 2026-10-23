@@ -8,6 +8,9 @@
 .dialog-feature-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 13px; background: var(--action); color: var(--action-text); }
 .dialog-backdrop:has(.open-repo-dialog) { background: #00000045; }
 .open-repo-dialog { box-shadow: 0 24px 90px #0000002a; }
+.repository-directory-input { display: flex; align-items: stretch; gap: 8px; }
+.repository-directory-input > input { flex: 1; min-width: 0; }
+.repository-directory-input > button { flex-shrink: 0; }
 .open-repo-dialog button:focus-visible { outline-color: var(--text-muted); }
 .open-repo-intro p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.9; }
 .open-repo-intro strong { color: var(--text); font-weight: 500; }
