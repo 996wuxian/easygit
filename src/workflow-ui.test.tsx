@@ -66,11 +66,37 @@ describe('Git 工作流界面', () => {
     await render(<BranchCompareDialog path={snapshot.path} branches={snapshot.branches} onClose={vi.fn()} />);
     await click('比较');
     expect(compare).toHaveBeenCalledWith(snapshot.path, snapshot.branches[0], snapshot.branches[1]);
-    await change(host.querySelectorAll('select')[1], JSON.stringify([false, 'main']));
+    await click('对比分支');
+    await act(async () => Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(option => option.textContent === '本地 · main')!.click());
     await act(async () => pending.resolve({ base: hash, target: 'b'.repeat(40), files: [{ path: 'old.ts', oldPath: null, status: 'M' }] }));
     expect(host.textContent).not.toContain('old.ts');
     expect(diff).not.toHaveBeenCalled(); expect(checkout).not.toHaveBeenCalled();
     expect(button('比较').disabled).toBe(true);
+  });
+
+  it('分支选择菜单标出选中项，Escape 只关闭菜单，键盘选择仍保留远程标记', async () => {
+    const onClose = vi.fn();
+    const compare = vi.spyOn(git, 'compareBranches').mockResolvedValue({ base: hash, target: 'b'.repeat(40), files: [] });
+    await render(<BranchCompareDialog path={snapshot.path} branches={snapshot.branches} onClose={onClose} />);
+    await click('基准分支');
+    const list = document.querySelector('[role="listbox"][aria-label="选择基准分支"]')!;
+    expect(list.querySelector('[aria-selected="true"]')?.textContent).toBe('本地 · main');
+    await act(async () => button('基准分支').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    await click('基准分支');
+    await act(async () => button('基准分支').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true })));
+    await act(async () => button('基准分支').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(button('基准分支').textContent).toBe('远程 · origin/dev');
+    expect(button('比较').disabled).toBe(true);
+    await click('对比分支');
+    await act(async () => Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(option => option.textContent === '本地 · main')!.click());
+    await click('比较');
+    expect(compare).toHaveBeenCalledWith(snapshot.path, snapshot.branches[1], snapshot.branches[0]);
+    expect(host.textContent).toContain('两个分支没有文件差异');
+    await click('基准分支');
+    await act(async () => document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!.click());
+    expect(host.textContent).toContain('两个分支没有文件差异');
   });
 
   it('stash 保存默认包含新文件，删除必须先确认', async () => {

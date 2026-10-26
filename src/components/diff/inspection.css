@@ -11,10 +11,11 @@
 .revision-patch .code-line code { white-space: pre; }
 .patch-file-heading { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg-soft); color: var(--text-muted); font: 11px var(--mono); white-space: pre; }
 .inspection-state { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 100px; padding: 18px; font-size: 12px; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.comparison-controls { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 12px; margin: 12px 0; }
-.comparison-controls label { display: grid; gap: 6px; font-size: 11px; color: var(--text-muted); min-width: 0; }
-.comparison-controls select, .history-tools input { min-width: 0; width: 100%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: 6px; font: inherit; font-size: 11px; padding: 7px; }
-.history-tools { display: grid; grid-template-columns: minmax(85px, 1fr) minmax(90px, 1.3fr); align-items: center; gap: 6px; padding: 0 0 10px; }
+.comparison-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; margin: 12px 0; }
+.comparison-branch-field { display: grid; gap: 6px; font-size: 11px; color: var(--text-muted); min-width: 0; }
+.comparison-branch-field .select-trigger { height: 35px; }
+.history-tools input { min-width: 0; width: 100%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: 6px; font: inherit; font-size: 11px; padding: 7px; }
+.history-tools { display: grid; grid-template-columns: minmax(85px, 1fr) minmax(90px, 1.3fr); align-items: center; gap: 6px; padding: 4px 0; }
 .history-tools input { height: 32px; border-radius: 7px; }
 .history-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px; font-size: 10px; color: var(--text-muted); }
 .history-pagination button { background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; color: var(--text); font: inherit; cursor: pointer; }
@@ -25,3 +26,4 @@
 .operation-banner p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
 .operation-banner .operation-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 760px) { .inspection-body { grid-template-columns: 160px minmax(0, 1fr); } }
+@media (max-width: 560px) { .comparison-controls { grid-template-columns: minmax(0, 1fr); } .comparison-controls > .primary-button { justify-self: start; } }

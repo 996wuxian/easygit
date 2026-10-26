@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { IconCloud, IconGitBranch } from '@tabler/icons-react';
 import { git, type GitBranch, type RevisionComparison } from '../../services/git';
 import { Dialog } from '../Dialog';
 import { PatchView } from '../diff/PatchView';
+import { SelectMenu } from '../SelectMenu';
 
 const key = (branch: GitBranch) => JSON.stringify([branch.remote, branch.name]);
 
@@ -17,6 +19,10 @@ export function BranchCompareDialog({ path, branches, onClose }: { path: string;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patch, setPatch] = useState({ diff: '', loading: false, error: null as string | null });
+  const options = branches.map(branch => ({
+    value: key(branch), label: `${branch.remote ? '远程' : '本地'} · ${branch.name}`,
+    icon: branch.remote ? <IconCloud size={16} aria-hidden="true" /> : <IconGitBranch size={16} aria-hidden="true" />,
+  }));
   const request = useRef(0);
   useEffect(() => () => { request.current++; }, []);
   const reset = () => { request.current++; setComparison(null); setSelected(''); setError(null); setLoading(false); };
@@ -38,7 +44,11 @@ export function BranchCompareDialog({ path, branches, onClose }: { path: string;
   }, [path, comparison, selected]);
   return <Dialog title="分支代码对比" className="inspection-dialog" onClose={onClose}>
     <p className="dialog-description">查看从基准分支到对比分支的文件与代码变化，保持当前工作区。结果以点击比较时的提交为准。</p>
-    <div className="comparison-controls"><label>基准分支<select value={base} onChange={event => { reset(); setBase(event.target.value); }}>{branches.map(branch => <option key={key(branch)} value={key(branch)}>{branch.remote ? '远程' : '本地'} · {branch.name}</option>)}</select></label><label>对比分支<select value={target} onChange={event => { reset(); setTarget(event.target.value); }}>{branches.map(branch => <option key={key(branch)} value={key(branch)}>{branch.remote ? '远程' : '本地'} · {branch.name}</option>)}</select></label><button className="primary-button" disabled={loading || !base || !target || base === target} onClick={() => { void compare(); }}>{loading ? '正在比较…' : '比较'}</button></div>
+    <div className="comparison-controls">
+      <div className="comparison-branch-field"><span>基准分支</span><SelectMenu label="基准分支" listLabel="选择基准分支" options={options} value={base} onChange={value => { if (value !== base) { reset(); setBase(value); } }} /></div>
+      <div className="comparison-branch-field"><span>对比分支</span><SelectMenu label="对比分支" listLabel="选择对比分支" options={options} value={target} onChange={value => { if (value !== target) { reset(); setTarget(value); } }} /></div>
+      <button className="primary-button" disabled={loading || !base || !target || base === target} onClick={() => { void compare(); }}>{loading ? '正在比较…' : '比较'}</button>
+    </div>
     {error && <p className="error-color" role="alert">{error}</p>}
     {comparison && <div className="inspection-meta"><code>{comparison.base.slice(0, 12)} → {comparison.target.slice(0, 12)}</code><span>{comparison.files.length} 个变化文件</span></div>}
     <div className="inspection-body"><div className="inspection-files" aria-label="分支变化文件">{comparison?.files.map(file => <button key={file.path} className={selected === file.path ? 'active' : ''} aria-pressed={selected === file.path} onClick={() => setSelected(file.path)}>{file.path}<small>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.status}</small></button>)}{!comparison?.files.length && <div className="inspection-state">{comparison ? '两个分支没有文件差异' : '选择两个分支后点击比较'}</div>}</div><PatchView {...patch} loading={loading || patch.loading} /></div>

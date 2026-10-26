@@ -1,6 +1,6 @@
 [package]
 name = "easygit"
-version = "0.1.2"
+version = "0.1.3"
 description = "A customizable Git workspace"
 authors = ["996wuxian"]
 repository = "https://github.com/996wuxian/easygit"
