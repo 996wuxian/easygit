@@ -10,7 +10,11 @@ vi.mock('./components/WindowControls', () => ({ WindowControls: () => null }));
 const workspace = { name: 'Alpha', path: 'X:/Projects/Alpha' };
 const file: GitFile = { path: 'test.ts', oldPath: null, indexStatus: ' ', worktreeStatus: 'M', staged: false, unstaged: true, untracked: false, conflicted: false };
 const conflictContent = 'keep\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nend\n';
-const conflict: ConflictFile = { ours: 'ours\n', theirs: 'theirs\n', working: conflictContent, oursExists: true, theirsExists: true, workingExists: true, binary: false, markerSize: 7, revision: 'revision1' };
+const conflict: ConflictFile = {
+  ours: 'keep\nours\nend\n', theirs: 'keep\ntheirs\nend\n', working: conflictContent,
+  oursExists: true, theirsExists: true, workingExists: true, binary: false, markerSize: 7, revision: 'revision1',
+  comparison: { diff: '@@ -1,3 +1,3 @@\n keep\n-ours\n+theirs\n end\n', unchanged: null, binary: false, originalExists: true, modifiedExists: true },
+};
 const blocksDiff = 'diff --git a/test.ts b/test.ts\n--- a/test.ts\n+++ b/test.ts\n@@ -1,3 +1,3 @@\n-old\n+new1\n+new2\n middle\n-removed\n';
 let host: HTMLDivElement;
 let root: Root;
@@ -94,6 +98,111 @@ describe('差异页文件操作', () => {
 });
 
 describe('冲突解决流程', () => {
+  it('冲突块保留相同行的普通底色，标出差异行和行内变更，保留双方时不改动原文', async () => {
+    const ours = 'shared\r\n  log: 0,\r\nanchor\r\nend\r\n';
+    const theirs = 'shared\r\n  log: 1,\r\nanchor\r\nextra\r\nend\r\n';
+    vi.mocked(git.conflict).mockResolvedValue({ ...conflict, working: `before\r\n<<<<<<< HEAD\r\n${ours}=======\r\n${theirs}>>>>>>> feature\r\nafter\r\n` });
+    await openWorkspace({ conflicted: true, indexStatus: 'U', worktreeStatus: 'U' });
+    await click(`解决冲突 ${file.path}`);
+    const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
+    const original = dialog.querySelector('[aria-label="冲突块 1 当前版本"]')!;
+    const modified = dialog.querySelector('[aria-label="冲突块 1 传入版本"]')!;
+    expect(Array.from(original.querySelectorAll('.context code')).map(line => line.textContent)).toEqual(['shared', 'anchor', 'end']);
+    expect(original.querySelector('.removed code')?.textContent).toBe('  log: 0,');
+    expect(original.querySelector('.removed mark')?.textContent).toBe('0');
+    expect(modified.querySelector('.added mark')?.textContent).toBe('1');
+    expect(modified.querySelectorAll('.added')).toHaveLength(2);
+    expect(original.querySelectorAll('.empty')).toHaveLength(1);
+    expect(modified.querySelector('.added .conflict-line-number')?.textContent).toBe('2');
+    await click('冲突块 1 保留双方', dialog);
+    expect(dialog.querySelector('textarea')?.value).toBe(`before\r\n${ours}${theirs}after\r\n`);
+    expect(dialog.querySelector('[aria-label="待处理冲突块"]')).toBeNull();
+  });
+
+  it('版本源码显示行号、差异高亮和对齐占位，跳转差异时同步两侧位置', async () => {
+    const context = Array.from({ length: 30 }, (_, index) => `context ${index}\n`).join('');
+    const diff = `@@ -1,34 +1,35 @@\n keep\n-ours\n+theirs\n+extra\n${context.split('\n').filter(Boolean).map(line => ` ${line}\n`).join('')}-last ours\n+last theirs\n end\n`;
+    vi.mocked(git.conflict).mockResolvedValue({ ...conflict, comparison: { ...conflict.comparison!, diff } });
+    await openWorkspace({ conflicted: true, indexStatus: 'U', worktreeStatus: 'U' });
+    await click(`解决冲突 ${file.path}`);
+    const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
+    const ours = dialog.querySelector<HTMLElement>('[aria-label="当前版本源码"]')!;
+    const theirs = dialog.querySelector<HTMLElement>('[aria-label="传入版本源码"]')!;
+    const overview = dialog.querySelector<HTMLElement>('[aria-label="变更区域概览"]')!;
+    expect(overview.querySelectorAll('button')).toHaveLength(2);
+    expect(ours.querySelector('.removed code')?.textContent).toBe('ours');
+    expect(theirs.querySelector('.added code')?.textContent).toBe('theirs');
+    expect(ours.querySelector('.removed .conflict-line-number')?.textContent).toBe('2');
+    expect(ours.querySelectorAll('.empty')).toHaveLength(1);
+    expect(button('上一处差异', dialog).disabled).toBe(true);
+    expect(dialog.textContent).toContain('差异 1 / 2');
+    await click('下一处差异', dialog);
+    expect(ours.scrollTop).toBeGreaterThan(0);
+    expect(theirs.scrollTop).toBe(ours.scrollTop);
+    expect(ours.querySelector('.current-difference code')?.textContent).toBe('last ours');
+    expect(theirs.querySelector('.current-difference code')?.textContent).toBe('last theirs');
+    expect(dialog.textContent).toContain('差异 2 / 2');
+    expect(button('下一处差异', dialog).disabled).toBe(true);
+    await click('上一处差异', dialog);
+    expect(ours.scrollTop).toBe(0);
+    expect(theirs.scrollTop).toBe(0);
+    const indicator = overview.querySelector<HTMLElement>('.change-overview-viewport')!;
+    const initialPosition = indicator.style.transform;
+    await act(async () => overview.querySelector<HTMLButtonElement>('[aria-label^="变更块 2："]')!.click());
+    expect(document.activeElement).toBe(ours);
+    expect(ours.scrollTop).toBeGreaterThan(0);
+    expect(theirs.scrollTop).toBe(ours.scrollTop);
+    expect(dialog.textContent).toContain('差异 2 / 2');
+    expect(ours.querySelector('.current-difference code')?.textContent).toBe('last ours');
+    expect(indicator.style.transform).not.toBe(initialPosition);
+    const lastPosition = indicator.style.transform;
+    await act(async () => {
+      theirs.scrollTop = 120;
+      theirs.dispatchEvent(new Event('scroll'));
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    });
+    expect(ours.scrollTop).toBe(120);
+    expect(indicator.style.transform).not.toBe(lastPosition);
+    expect(git.resolveConflict).not.toHaveBeenCalled();
+  });
+
+  it('版本中间的概览分别标出删除、新增和修改，点击色块不改变合并结果', async () => {
+    const diff = '@@ -1,4 +1,4 @@\n-old\n keep1\n+new\n keep2\n-before\n+after\n';
+    vi.mocked(git.conflict).mockResolvedValue({ ...conflict, comparison: { ...conflict.comparison!, diff } });
+    await openWorkspace({ conflicted: true, indexStatus: 'U', worktreeStatus: 'U' });
+    await click(`解决冲突 ${file.path}`);
+    const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
+    const overview = dialog.querySelector('[aria-label="变更区域概览"]')!;
+    expect(overview.querySelectorAll('.change-overview-marker')).toHaveLength(3);
+    expect(overview.querySelector('.removed')?.getAttribute('aria-label')).toContain('删除');
+    expect(overview.querySelector('.added')?.getAttribute('aria-label')).toContain('新增');
+    expect(overview.querySelector('.modified')?.getAttribute('aria-label')).toContain('修改');
+    await act(async () => overview.querySelector<HTMLButtonElement>('.added')!.click());
+    expect(dialog.textContent).toContain('差异 2 / 3');
+    expect(dialog.querySelector('textarea')?.value).toBe(conflictContent);
+    expect(git.resolveConflict).not.toHaveBeenCalled();
+  });
+
+  it('打开长文件自动定位第一处差异，选择冲突内容后仍保留版本对照', async () => {
+    const context = Array.from({ length: 60 }, (_, index) => `line ${index}\n`).join('');
+    const diff = `@@ -1,61 +1,61 @@\n${context.split('\n').filter(Boolean).map(line => ` ${line}\n`).join('')}-ours\n+theirs\n`;
+    vi.mocked(git.conflict).mockResolvedValue({ ...conflict, comparison: { ...conflict.comparison!, diff } });
+    await openWorkspace({ conflicted: true, indexStatus: 'U', worktreeStatus: 'U' });
+    await click(`解决冲突 ${file.path}`);
+    const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
+    const ours = dialog.querySelector<HTMLElement>('[aria-label="当前版本源码"]')!;
+    expect(ours.scrollTop).toBeGreaterThan(0);
+    expect(ours.querySelector('.removed code')?.textContent).toBe('ours');
+    expect(ours.querySelector('.removed .conflict-line-number')?.textContent).toBe('61');
+    const top = ours.scrollTop;
+    await click('冲突块 1 使用当前', dialog);
+    expect(ours.scrollTop).toBe(top);
+    expect(ours.querySelector('.removed code')?.textContent).toBe('ours');
+    await click('使用传入版本', dialog);
+    await click('保存并标记已解决', dialog);
+    expect(git.resolveConflict).toHaveBeenCalledWith(workspace.path, file.path, 'revision1', 'theirs', undefined);
+  });
+
   it('从全屏打开工具，保留双方且保留冲突外的编辑后保存并暂存', async () => {
     await openWorkspace({ conflicted: true, indexStatus: 'U', worktreeStatus: 'U' });
     await click('展开代码差异');
@@ -134,10 +243,28 @@ describe('冲突解决流程', () => {
     await click(`解决冲突 ${file.path}`);
     const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
     expect(dialog.querySelector('textarea')).toBeNull();
+    expect(dialog.textContent).toContain('二进制或非 UTF-8 文件');
+    expect(dialog.querySelector('[aria-label="下一处差异"]')).toBeNull();
+    expect(dialog.querySelector('[aria-label="变更区域概览"]')).toBeNull();
     expect(button('保存并标记已解决', dialog).disabled).toBe(true);
     await click('使用传入版本', dialog);
     await click('保存并标记已解决', dialog);
     expect(git.resolveConflict).toHaveBeenCalledWith(workspace.path, file.path, 'revision1', 'theirs', undefined);
+  });
+
+  it('删除冲突保留剩余版本的高亮，并可接受删除', async () => {
+    vi.mocked(git.conflict).mockResolvedValue({
+      ...conflict, ours: null, oursExists: false,
+      comparison: { diff: '@@ -0,0 +1 @@\n+theirs\n', unchanged: null, binary: false, originalExists: false, modifiedExists: true },
+    });
+    await openWorkspace({ conflicted: true, indexStatus: 'D', worktreeStatus: 'U' });
+    await click(`解决冲突 ${file.path}`);
+    const dialog = document.querySelector('[aria-label="解决文件冲突"]')!;
+    expect(dialog.querySelector('[aria-label="当前版本源码"]')?.textContent).toContain('此版本中不存在该文件');
+    expect(dialog.querySelector('[aria-label="传入版本源码"] .added code')?.textContent).toBe('theirs');
+    await click('接受当前版本的删除', dialog);
+    await click('保存并标记已解决', dialog);
+    expect(git.resolveConflict).toHaveBeenCalledWith(workspace.path, file.path, 'revision1', 'ours', undefined);
   });
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconFolder, IconFolderOpen, IconGitBranch, IconHistory, IconKey, IconLayoutDashboard, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconFolder, IconFolderOpen, IconGitBranch, IconHistory, IconKey, IconLayoutDashboard, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, StashPanel, ActivityPanel, ScriptsPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
@@ -17,6 +17,7 @@ import { OperationBanner } from './components/OperationBanner';
 import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
 import { AboutDialog } from './components/AboutDialog';
+import { ProjectNotesDialog } from './components/ProjectNotesDialog';
 import { APP_VERSION } from './services/appInfo';
 import { useAppUpdates } from './services/useAppUpdates';
 import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } from './services/git';
@@ -25,7 +26,7 @@ import { commitStatus } from './components/commits/model';
 import { useRepository, type RecentRepository } from './services/useRepository';
 import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
 
-type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | null;
+type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | 'project-notes' | null;
 type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
 const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
@@ -442,7 +443,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     <main className="main-scroll">
       <div className="workspace-topbar"><button className="repository-switcher" title="切换仓库" aria-label="切换仓库" onClick={() => setModal('open')}><IconFolder size={19} /><strong>{snapshot.name || '选择仓库'}</strong><IconChevronDown size={13} /></button><div className="topbar-tools"><button className="topbar-search" onClick={() => setModal('commands')}><IconSearch size={16} /><span>搜索命令或操作</span><kbd>Ctrl K</kbd></button><button className="primary-button open-repo-button" aria-label="打开项目所在文件夹" title={snapshot.path ? `打开项目所在文件夹：${snapshot.path}` : '请先打开一个项目'} disabled={!hasRepository} onClick={() => { void openProjectDirectory(); }}><IconFolderOpen size={16} />打开项目所在文件夹</button></div></div>
       {hasRepository ? <div className="workspace-body">
-        <section className="page-heading"><h1>工作区</h1><div className="heading-actions"><span className={`workspace-status ${snapshot.files.length ? 'has-changes' : ''}`}><span className="tiny-dot" />{snapshot.operation ? snapshot.operation : snapshot.files.length ? '有未提交更改' : '工作区干净'}</span><button className="icon-button" aria-label="刷新仓库" title="刷新仓库 · Ctrl R" disabled={busy} onClick={() => { void repo.refresh(); }}><IconRefresh size={17} className={busy ? 'spin' : ''} /></button></div></section>
+        <section className="page-heading"><h1>工作区</h1><div className="heading-actions"><button className="text-button project-notes-button" aria-haspopup="dialog" title="记录当前项目的事项" onClick={() => setModal('project-notes')}><IconNotes size={16} aria-hidden="true" />项目笔记</button><span className={`workspace-status ${snapshot.files.length ? 'has-changes' : ''}`}><span className="tiny-dot" />{snapshot.operation ? snapshot.operation : snapshot.files.length ? '有未提交更改' : '工作区干净'}</span><button className="icon-button" aria-label="刷新仓库" title="刷新仓库 · Ctrl R" disabled={busy} onClick={() => { void repo.refresh(); }}><IconRefresh size={17} className={busy ? 'spin' : ''} /></button></div></section>
 
         <section className="repository-overview" aria-label="当前仓库">
           <button className="branch-card" onClick={() => setModal('branches')} title="切换分支"><span className="branch-card-top"><span><IconGitBranch size={15} />当前分支</span></span><strong>{snapshot.branch || '尚无分支'}</strong><IconChevronDown className="branch-card-chevron" size={15} /></button>
@@ -501,6 +502,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
     {modal === 'about' && <AboutDialog updates={updates} onClose={closeModal} />}
+    {modal === 'project-notes' && hasRepository && <ProjectNotesDialog key={snapshot.path} path={snapshot.path} name={snapshot.name} onClose={closeModal} />}
 
     {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.sourceRemote}:${mergeRequest.source}:${mergeRequest.targetRemote}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} sourceRemote={mergeRequest.sourceRemote} target={mergeRequest.target} targetRemote={mergeRequest.targetRemote} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
 

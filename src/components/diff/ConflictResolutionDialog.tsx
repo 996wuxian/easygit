@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { IconAlertTriangle, IconCheck, IconLoader2, IconRefresh } from '@tabler/icons-react';
 import { git, type ConflictFile, type ConflictResolution } from '../../services/git';
 import { Dialog } from '../Dialog';
+import { ConflictVersions } from './ConflictVersions';
+import { ConflictBlockDiff } from './ConflictBlockDiff';
 import { acceptConflictBlock, hasConflictMarkers, parseConflictBlocks } from './conflicts';
 import './diff.css';
 
@@ -57,10 +59,7 @@ export function ConflictResolutionDialog({ path, file, operation, busy, onResolv
     {operation === 'rebase' && <p className="conflict-help">Rebase 期间，当前版本（ours）是变基目标，传入版本（theirs）是正在重放的提交。</p>}
     {error && <div className="conflict-error" role="alert">{error}{!data && <button className="text-button" onClick={() => setAttempt(value => value + 1)}><IconRefresh size={14} />重试读取</button>}</div>}
     {!data ? !error && <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取冲突版本…</span></div> : <>
-      <div className="conflict-versions">
-        <section><h3>当前版本 <small>ours</small>{!data.oursExists && <small>已删除</small>}</h3><pre>{data.oursExists ? data.binary ? '二进制或非 UTF-8 文件' : data.ours : '此版本中不存在该文件'}</pre><button className="secondary-button" aria-pressed={resolution === 'ours'} disabled={locked} onClick={() => setResolution('ours')}>{data.oursExists ? '使用当前版本' : '接受当前版本的删除'}</button></section>
-        <section><h3>传入版本 <small>theirs</small>{!data.theirsExists && <small>已删除</small>}</h3><pre>{data.theirsExists ? data.binary ? '二进制或非 UTF-8 文件' : data.theirs : '此版本中不存在该文件'}</pre><button className="secondary-button" aria-pressed={resolution === 'theirs'} disabled={locked} onClick={() => setResolution('theirs')}>{data.theirsExists ? '使用传入版本' : '接受传入版本的删除'}</button></section>
-      </div>
+      <ConflictVersions data={data} resolution={resolution} locked={locked} onChoose={setResolution} />
       <div className="conflict-result-heading"><h3>合并结果</h3><div>
         {!data.binary && <button className="text-button" aria-pressed={resolution === 'content'} disabled={locked} onClick={() => setResolution('content')}>编辑合并结果</button>}
         {!data.binary && data.workingExists && <button className="text-button" aria-pressed={resolution === 'working'} disabled={locked || workingUnresolved} title={workingUnresolved ? '工作区仍包含冲突标记' : '使用已在外部编辑器解决的工作区文件'} onClick={() => setResolution('working')}>保留工作区文件</button>}
@@ -69,7 +68,7 @@ export function ConflictResolutionDialog({ path, file, operation, busy, onResolv
       {resolution === 'content' && <>
         {blocks.length > 0 && <div className="conflict-blocks" aria-label="待处理冲突块">{blocks.map((block, index) => <section className="conflict-block" key={`${block.start}-${index}`}>
           <div><strong>冲突块 {index + 1}</strong><div>{(['ours', 'theirs', 'both'] as const).map((side, choice) => <button className="text-button" key={side} disabled={locked} aria-label={`冲突块 ${index + 1} ${['使用当前', '使用传入', '保留双方'][choice]}`} onClick={() => setContent(value => acceptConflictBlock(value, block, side))}>{['使用当前', '使用传入', '保留双方'][choice]}</button>)}</div></div>
-          <div className="conflict-block-sources"><pre aria-label={`冲突块 ${index + 1} 当前版本`}>{block.ours || '（空）'}</pre><pre aria-label={`冲突块 ${index + 1} 传入版本`}>{block.theirs || '（空）'}</pre></div>
+          <ConflictBlockDiff block={block} number={index + 1} />
         </section>)}</div>}
         <textarea className="conflict-result-editor" aria-label="编辑合并结果" spellCheck={false} value={content} disabled={locked} onChange={event => setContent(event.target.value)} />
         <p className="conflict-help">{unresolved ? `仍有未处理的冲突标记${blocks.length ? `（${blocks.length} 个冲突块）` : ''}，请逐块选择或手动编辑。` : '冲突标记已清除，可以保存。'} 保留双方时按当前版本、传入版本的顺序拼接。</p>

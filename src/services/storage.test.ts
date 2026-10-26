@@ -104,6 +104,8 @@ describe('file-backed application storage', () => {
     await started;
     storage.setItem('esaygit.theme', 'light');
     storage.setItem(COMMIT_DRAFTS_KEY, '{"X:/Alpha":"docs: 更新文档"}');
+    storage.setItem('easygit.project-notes.v1:X:/Alpha', 'Alpha 的启动步骤\n排查心得');
+    storage.setItem('easygit.project-notes.v1:X:/Beta', 'Beta 的待办事项');
     const savingKey = storage.setApiKey('latest-test-key');
     release();
     await savingKey;
@@ -113,6 +115,8 @@ describe('file-backed application storage', () => {
     await restarted.initialize();
     expect(restarted.getItem('esaygit.theme')).toBe('light');
     expect(restarted.getItem(COMMIT_DRAFTS_KEY)).toContain('docs: 更新文档');
+    expect(restarted.getItem('easygit.project-notes.v1:X:/Alpha')).toBe('Alpha 的启动步骤\n排查心得');
+    expect(restarted.getItem('easygit.project-notes.v1:X:/Beta')).toBe('Beta 的待办事项');
     expect(restarted.getApiKey()).toBe('latest-test-key');
     expect(JSON.stringify(driver.data)).not.toContain('latest-test-key');
   });

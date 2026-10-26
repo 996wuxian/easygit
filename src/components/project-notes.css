@@ -1,0 +1,14 @@
+.project-notes-button { gap: 6px; white-space: nowrap; }
+.dialog.project-notes-dialog { width: 680px; }
+.project-notes-project { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); }
+.project-notes-project > svg { color: var(--text-muted); }
+.project-notes-project > div { min-width: 0; }
+.project-notes-project strong { display: block; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.project-notes-project span { display: block; margin-top: 4px; color: var(--text-muted); font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+.project-notes-editor { display: block; min-height: 160px; height: clamp(160px, 38vh, 400px); resize: vertical; font-size: 13px; line-height: 1.9; tab-size: 2; }
+.project-notes-editor::placeholder { color: var(--text-muted); }
+.project-notes-error { color: var(--danger); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.project-notes-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.project-notes-status { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; }
+.project-notes-status.is-error { color: var(--danger); }
+.project-notes-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }

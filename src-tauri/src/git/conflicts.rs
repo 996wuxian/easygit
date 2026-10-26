@@ -1,3 +1,4 @@
+use super::comparison::{compare_contents, FileComparison};
 use super::{run, run_text, snapshot, validate_files, with_repository, RepositorySnapshot};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,6 +23,7 @@ pub struct ConflictFile {
     pub binary: bool,
     pub marker_size: usize,
     pub revision: String,
+    pub comparison: Option<FileComparison>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -77,7 +79,7 @@ fn read_working(path: &Path) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(bytes))
 }
 
-fn read_at(root: &Path, file: &str) -> Result<ConflictFile, String> {
+fn read_at(root: &Path, file: &str, with_comparison: bool) -> Result<ConflictFile, String> {
     let entries = run(root, &["ls-files", "--unmerged", "-z", "--", file])?;
     let mut versions: [Option<Vec<u8>>; 2] = [None, None];
     let mut found = false;
@@ -147,6 +149,14 @@ fn read_at(root: &Path, file: &str) -> Result<ConflictFile, String> {
         binary,
         marker_size,
         revision: format!("{:x}", hash.finish()),
+        comparison: if binary || !with_comparison {
+            None
+        } else {
+            Some(compare_contents(
+                versions[0].as_deref(),
+                versions[1].as_deref(),
+            )?)
+        },
     })
 }
 
@@ -165,7 +175,7 @@ fn has_markers(content: &str, size: usize) -> bool {
 
 pub fn read_conflict(path: &str, file: &str) -> Result<ConflictFile, String> {
     validate_files(&[file.to_owned()])?;
-    with_repository(path, |root| read_at(root, file))
+    with_repository(path, |root| read_at(root, file, true))
 }
 
 pub fn resolve_conflict(
@@ -177,7 +187,7 @@ pub fn resolve_conflict(
 ) -> Result<RepositorySnapshot, String> {
     validate_files(&[file.to_owned()])?;
     with_repository(path, |root| {
-        let current = read_at(root, file)?;
+        let current = read_at(root, file, false)?;
         if current.revision != revision {
             return Err(
                 "冲突文件已被其他操作修改，请重新读取后再解决，避免覆盖新内容。".to_owned(),

@@ -131,57 +131,65 @@ pub fn read_file_comparison(
         } else {
             working_content(root, file)?
         };
-        let before = original.as_deref().unwrap_or_default();
-        let after = modified.as_deref().unwrap_or_default();
-        let binary = [before, after]
-            .iter()
-            .any(|bytes| bytes.contains(&0) || std::str::from_utf8(bytes).is_err());
-        let mut comparison = FileComparison {
-            diff: String::new(),
-            unchanged: None,
-            binary,
-            original_exists: original.is_some(),
-            modified_exists: modified.is_some(),
-        };
-        if binary {
-            return Ok(comparison);
-        }
-        let before = String::from_utf8_lossy(before).replace("\r\n", "\n");
-        let after = String::from_utf8_lossy(after).replace("\r\n", "\n");
-        if before == after {
-            comparison.unchanged = Some(before);
-            return Ok(comparison);
-        }
-        // Diff the exact contents already read, rather than a moving index/worktree pair.
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
-        let old_file = directory.path().join("original");
-        let new_file = directory.path().join("modified");
-        fs::write(&old_file, &before).map_err(|error| error.to_string())?;
-        fs::write(&new_file, &after).map_err(|error| error.to_string())?;
-        let result = output(
-            None,
-            &[
-                "-c",
-                "diff.algorithm=myers",
-                "-c",
-                "diff.indentHeuristic=false",
-                "diff",
-                "--no-index",
-                "--no-color",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--unified=2147483647",
-                "--",
-                &old_file.to_string_lossy(),
-                &new_file.to_string_lossy(),
-            ],
-        )?;
-        if !result.status.success() && result.status.code() != Some(1) {
-            return Err(super::error_text(&result));
-        }
-        comparison.diff = String::from_utf8_lossy(&result.stdout).into_owned();
-        Ok(comparison)
+        compare_contents(original.as_deref(), modified.as_deref())
     })
+}
+
+// Compare snapshots already read by the caller, including unmerged index stages.
+pub(super) fn compare_contents(
+    original: Option<&[u8]>,
+    modified: Option<&[u8]>,
+) -> Result<FileComparison, String> {
+    let before = original.unwrap_or_default();
+    let after = modified.unwrap_or_default();
+    let binary = [before, after]
+        .iter()
+        .any(|bytes| bytes.contains(&0) || std::str::from_utf8(bytes).is_err());
+    let mut comparison = FileComparison {
+        diff: String::new(),
+        unchanged: None,
+        binary,
+        original_exists: original.is_some(),
+        modified_exists: modified.is_some(),
+    };
+    if binary {
+        return Ok(comparison);
+    }
+    let before = String::from_utf8_lossy(before).replace("\r\n", "\n");
+    let after = String::from_utf8_lossy(after).replace("\r\n", "\n");
+    if before == after {
+        comparison.unchanged = Some(before);
+        return Ok(comparison);
+    }
+    // Diff the exact contents already read, rather than a moving index/worktree pair.
+    let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let old_file = directory.path().join("original");
+    let new_file = directory.path().join("modified");
+    fs::write(&old_file, &before).map_err(|error| error.to_string())?;
+    fs::write(&new_file, &after).map_err(|error| error.to_string())?;
+    let result = output(
+        None,
+        &[
+            "-c",
+            "diff.algorithm=myers",
+            "-c",
+            "diff.indentHeuristic=false",
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--unified=2147483647",
+            "--",
+            &old_file.to_string_lossy(),
+            &new_file.to_string_lossy(),
+        ],
+    )?;
+    if !result.status.success() && result.status.code() != Some(1) {
+        return Err(super::error_text(&result));
+    }
+    comparison.diff = String::from_utf8_lossy(&result.stdout).into_owned();
+    Ok(comparison)
 }
 
 #[cfg(test)]

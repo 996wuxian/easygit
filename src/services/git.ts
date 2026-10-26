@@ -56,6 +56,7 @@ export interface ConflictFile {
   ours: string | null; theirs: string | null; working: string | null;
   oursExists: boolean; theirsExists: boolean; workingExists: boolean;
   binary: boolean; markerSize: number; revision: string;
+  comparison: FileComparison | null;
 }
 export interface FileComparison {
   diff: string;

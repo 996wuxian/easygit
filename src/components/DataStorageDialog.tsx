@@ -35,7 +35,7 @@ export function DataStorageDialog({ onClose, notify }: {
   }
 
   return <Dialog title="数据存储" onClose={() => { if (!busy) onClose(); }}>
-    <p className="dialog-description">主题、布局、仓库列表、排序和提交草稿自动保存到本机数据目录，并保留上一份数据备份。API Key 单独加密保存，仅当前 Windows 用户可解密。</p>
+    <p className="dialog-description">主题、布局、仓库列表、排序、提交草稿和项目笔记自动保存到本机数据目录，并保留上一份数据备份。API Key 单独加密保存，仅当前 Windows 用户可解密。</p>
     {error ? <p className="storage-settings-error" role="alert">{error}</p> : <>
       <label className="field-label" htmlFor="current-data-directory">当前数据目录</label>
       <div className="storage-directory-row">

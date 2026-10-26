@@ -35,6 +35,9 @@ fn merged_text_is_staged_and_other_files_are_preserved() {
     let data = read_conflict(path, "conflict.txt").unwrap();
     assert_eq!(data.ours.as_deref(), Some("ours\n"));
     assert_eq!(data.theirs.as_deref(), Some("theirs\n"));
+    let comparison = data.comparison.as_ref().unwrap();
+    assert!(comparison.diff.contains("-ours\n+theirs\n"));
+    assert!(comparison.original_exists && comparison.modified_exists);
     let result = resolve_conflict(
         path,
         "conflict.txt",
@@ -97,6 +100,24 @@ fn markers_and_stale_revisions_are_rejected_without_writing() {
         b"external edit\n"
     );
     let latest = read_conflict(path, "conflict.txt").unwrap();
+    // The visual comparison must keep using the index stages after external edits.
+    assert_eq!(
+        latest
+            .comparison
+            .as_ref()
+            .unwrap()
+            .diff
+            .split_once("@@")
+            .unwrap()
+            .1,
+        data.comparison
+            .as_ref()
+            .unwrap()
+            .diff
+            .split_once("@@")
+            .unwrap()
+            .1
+    );
     let result = resolve_conflict(
         path,
         "conflict.txt",
@@ -118,6 +139,7 @@ fn either_side_and_binary_files_can_be_resolved() {
         let path = directory.path().to_str().unwrap();
         let data = read_conflict(path, "conflict.txt").unwrap();
         assert!(data.binary);
+        assert!(data.comparison.is_none());
         let result =
             resolve_conflict(path, "conflict.txt", &data.revision, resolution, None).unwrap();
         assert!(result.files.iter().all(|file| !file.conflicted));
@@ -159,6 +181,9 @@ fn modify_delete_can_keep_a_version_or_accept_deletion() {
         let directory = conflict(ours, theirs);
         let path = directory.path().to_str().unwrap();
         let data = read_conflict(path, "conflict.txt").unwrap();
+        let comparison = data.comparison.as_ref().unwrap();
+        assert_eq!(comparison.original_exists, ours.is_some());
+        assert_eq!(comparison.modified_exists, theirs.is_some());
         let result =
             resolve_conflict(path, "conflict.txt", &data.revision, resolution, None).unwrap();
         assert!(result.files.iter().all(|file| !file.conflicted));
