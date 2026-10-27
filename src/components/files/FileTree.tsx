@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconChevronRight, IconFileCode, IconFolder, IconFolderOpen, IconLock, IconRefresh, IconSearch } from '@tabler/icons-react';
 import type { GitFile } from '../../services/git';
 import { project, type ProjectEntry, type ProjectListing } from '../../services/project';
@@ -31,12 +31,26 @@ function Directory(props: DirectoryProps) {
 }
 
 function Entry({ entry, ...props }: DirectoryProps & { entry: ProjectEntry }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => Boolean(entry.directory && props.selected?.startsWith(`${entry.path}/`)));
+  const row = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (entry.directory && props.selected?.startsWith(`${entry.path}/`)) setExpanded(true);
+  }, [entry.directory, entry.path, props.selected]);
+  useEffect(() => {
+    if (entry.directory || props.selected !== entry.path) return;
+    const button = row.current;
+    const viewport = button?.closest<HTMLElement>('.project-tree-scroll');
+    if (!button || !viewport) return;
+    const bounds = button.getBoundingClientRect();
+    const visible = viewport.getBoundingClientRect();
+    const offset = bounds.top < visible.top ? bounds.top - visible.top : bounds.bottom > visible.bottom ? bounds.bottom - visible.bottom : 0;
+    if (offset) viewport.scrollTo({ top: viewport.scrollTop + offset, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, [entry.directory, entry.path, props.selected]);
   const status = props.files.find(file => file.path === entry.path);
   const label = status?.conflicted ? '冲突' : status?.untracked || status?.indexStatus === 'A' ? '新增' : status?.indexStatus === 'R' || status?.worktreeStatus === 'R' ? '重命名' : status ? '修改' : entry.ignored ? '忽略' : '';
   const Icon = entry.blocked ? IconLock : entry.directory ? expanded ? IconFolderOpen : IconFolder : IconFileCode;
   return <li>
-    <button className={`project-tree-row${props.selected === entry.path ? ' selected' : ''}${entry.ignored ? ' ignored' : ''}`}
+    <button ref={row} className={`project-tree-row${props.selected === entry.path ? ' selected' : ''}${entry.ignored ? ' ignored' : ''}`}
       title={entry.blocked ? `${entry.path}：链接、子模块或特殊文件请在外部打开` : entry.path}
       aria-label={`${entry.directory ? '目录' : '打开文件'} ${entry.path}${label ? ` · ${label}` : ''}`}
       aria-expanded={entry.directory ? expanded : undefined} aria-current={props.selected === entry.path ? 'true' : undefined}

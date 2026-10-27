@@ -124,7 +124,7 @@ describe('撤回未暂存更改', () => {
     await click('全部撤回');
     await click('确认撤回');
     expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('撤回全部未暂存更改');
-    expect(host.textContent).toContain('撤回失败');
+    expect(document.querySelector('[aria-label="通知提示"]')?.textContent).toContain('撤回失败');
   });
 
   it('存在冲突文件时禁用该文件和全部撤回', async () => {

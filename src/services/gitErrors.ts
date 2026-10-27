@@ -20,6 +20,22 @@ export function formatFetchError(error: unknown): string {
   return `${prefix}请检查远程仓库地址、网络连接及访问权限。可在“操作记录”中展开原始错误详情。`;
 }
 
+/** Explain checkout blockers while keeping the affected paths visible. */
+export function formatCheckoutError(error: unknown): string {
+  const message = gitErrorMessage(error);
+  const localChanges = message.match(/Your local changes to the following files would be overwritten by checkout:([\s\S]*?)(?:Please commit your changes or stash them before you (?:switch branches|checkout)\.|Aborting\b|$)/i);
+  if (localChanges) {
+    return `切换分支失败：以下文件有尚未提交的本地修改，切换分支会覆盖这些修改${formatFiles(localChanges[1])}。请先提交修改，或在“暂存架”面板中临时保存更改后再切换。`;
+  }
+
+  const untrackedFiles = message.match(/The following untracked working tree files would be overwritten by checkout:([\s\S]*?)(?:Please move or remove them before you (?:switch branches|checkout)\.|Aborting\b|$)/i);
+  if (untrackedFiles) {
+    return `切换分支失败：以下未跟踪的本地文件会被目标分支的文件覆盖${formatFiles(untrackedFiles[1])}。请先将这些文件移到仓库外备份，或在“暂存架”面板中勾选“包含未跟踪的新文件”并保存更改后再切换。`;
+  }
+
+  return message;
+}
+
 /** Explain pull blockers while keeping the affected paths visible. */
 export function formatPullError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);

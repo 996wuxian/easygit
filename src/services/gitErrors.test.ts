@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFetchError, gitErrorMessage } from './gitErrors';
+import { formatCheckoutError, formatFetchError, gitErrorMessage } from './gitErrors';
 
 describe('远程更新失败的中文提示', () => {
   it('将实际连接失败错误转换为原因与处理建议，不在主提示中展示整段英文及仓库地址', () => {
@@ -26,5 +26,30 @@ describe('远程更新失败的中文提示', () => {
   ])('为 %s 提供对应中文说明', (raw, expected) => {
     expect(formatFetchError(raw)).toContain(expected);
     expect(formatFetchError(raw)).not.toContain(raw);
+  });
+});
+
+describe('切换分支失败的中文提示', () => {
+  const raw = 'error: Your local changes to the following files would be overwritten by checkout: package-lock.json Please commit your changes or stash them before you switch branches. Aborting';
+
+  it.each([raw, new Error(raw)])('翻译本地修改会被覆盖的提示并保留文件名：%s', error => {
+    expect(formatCheckoutError(error)).toBe('切换分支失败：以下文件有尚未提交的本地修改，切换分支会覆盖这些修改：package-lock.json。请先提交修改，或在“暂存架”面板中临时保存更改后再切换。');
+  });
+
+  it('保留多行输出中的中文文件名和带空格的路径', () => {
+    const result = formatCheckoutError('error: Your local changes to the following files would be overwritten by checkout:\r\n\tpackage-lock.json\r\n\t文档/项目 notes.md\r\nPlease commit your changes or stash them before you switch branches.\r\nAborting');
+    expect(result).toContain('package-lock.json、文档/项目 notes.md');
+    expect(result).not.toMatch(/Your local changes|Please commit|Aborting/);
+  });
+
+  it('未跟踪文件给出备份或包含新文件的暂存架建议', () => {
+    const result = formatCheckoutError('error: The following untracked working tree files would be overwritten by checkout:\n\tnew.txt\nPlease move or remove them before you switch branches.\nAborting');
+    expect(result).toContain('未跟踪的本地文件会被目标分支的文件覆盖：new.txt');
+    expect(result).toContain('包含未跟踪的新文件');
+    expect(result).not.toContain('Please move');
+  });
+
+  it('保留已有中文提示和其他错误信息', () => {
+    for (const message of ['请先解决冲突文件。', 'fatal: invalid reference: missing']) expect(formatCheckoutError(new Error(message))).toBe(message);
   });
 });

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type BranchRequest, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
-import { formatFetchError, formatPullError, gitErrorMessage } from './gitErrors';
+import { formatCheckoutError, formatFetchError, formatPullError, gitErrorMessage } from './gitErrors';
 import { project, type ProjectText } from './project';
 import { confirmPendingChanges } from './pendingChanges';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean; details?: string }
+export interface Notice { id: string; message: string; error: boolean }
 interface RemoteRequest { path: string; session: number; reading: boolean; promise: Promise<boolean>; complete: (updated: boolean) => void }
 interface RefreshRequest { path: string; token: number; promise: Promise<boolean>; notified: boolean; force: boolean }
 const RECENTS_KEY = 'esaygit.recent.v1';
@@ -24,7 +25,7 @@ export function useRepository(onReady: () => void) {
   const [snapshot, setSnapshot] = useState<RepositorySnapshot>(emptyRepository);
   const [recents, setRecents] = useState(loadRecents);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [gitVersion, setGitVersion] = useState('');
   const snapshotRef = useRef(snapshot);
@@ -38,8 +39,13 @@ export function useRepository(onReady: () => void) {
   snapshotRef.current = snapshot;
 
   const notify = useCallback((message: string, error = false, details?: string) => {
-    setNotice({ message, error });
-    setActivities(items => [{ id: crypto.randomUUID(), label: message, error, details, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }, ...items].slice(0, 40));
+    const id = crypto.randomUUID();
+    setNotices(items => [...items, { id, message, error }]);
+    setActivities(items => [{ id, label: message, error, details, time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }, ...items].slice(0, 40));
+  }, []);
+
+  const dismissNotice = useCallback((id: string) => {
+    setNotices(items => items.filter(item => item.id !== id));
   }, []);
 
   const fetch = useCallback(() => {
@@ -288,7 +294,7 @@ export function useRepository(onReady: () => void) {
     }), async path => { outcome = await git.cherryPick(path, commit, expectedHead, expectedBranch); return outcome.snapshot; });
     return updated && Boolean(outcome && (outcome.snapshot.operation === 'cherry-pick' || !outcome.error));
   };
-  const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote));
+  const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote), formatCheckoutError);
   const createBranch = (branch: string) => {
     const base = snapshotRef.current.branch || '当前提交';
     return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch));
@@ -360,5 +366,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

@@ -98,6 +98,6 @@ describe('分支管理工作流', () => {
     await openMenu('切换到 topic'); await click('删除本地分支…'); await click('确认删除本地分支');
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(button('切换到 topic')).toBeTruthy();
-    expect(host.textContent).toContain('尚未完全合并');
+    expect(document.querySelector('[aria-label="通知提示"]')?.textContent).toContain('尚未完全合并');
   });
 });

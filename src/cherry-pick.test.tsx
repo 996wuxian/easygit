@@ -50,7 +50,7 @@ describe('拣选提交工作流', () => {
     expect(git.cherryPick).not.toHaveBeenCalled(); await click('取消'); expect(git.cherryPick).not.toHaveBeenCalled();
     await menu(); await click('拣选到当前分支…'); await click('确认拣选提交');
     expect(git.cherryPick).toHaveBeenCalledWith(workspace.path, source.hash, head, 'main');
-    expect(document.querySelector('[role="dialog"]')).toBeNull(); expect(host.textContent).toContain('已拣选提交到 main');
+    expect(document.querySelector('[role="dialog"]')).toBeNull(); expect(document.querySelector('[aria-label="通知提示"]')?.textContent).toContain('已拣选提交到 main');
   });
   it('工作区有修改时禁用拣选，说明原因', async () => {
     snapshot.files = [{ path: 'new.txt', oldPath: null, indexStatus: '?', worktreeStatus: '?', staged: false, unstaged: true, untracked: true, conflicted: false }];

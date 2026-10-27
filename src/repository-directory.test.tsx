@@ -68,7 +68,7 @@ describe('打开仓库时选择文件夹', () => {
   it('选择失败时保留输入并允许重试', async () => {
     await change('X:/Projects/manual'); vi.mocked(gitService.git.pickDirectory).mockRejectedValueOnce('系统选择器不可用');
     await click('选择仓库文件夹');
-    expect(input().value).toBe('X:/Projects/manual'); expect(host.textContent).toContain('无法选择文件夹');
+    expect(input().value).toBe('X:/Projects/manual'); expect(document.querySelector('[aria-label="通知提示"]')?.textContent).toContain('无法选择文件夹');
     expect(button('选择仓库文件夹').disabled).toBe(false); await click('选择仓库文件夹');
     expect(input().value).toBe('X:/Projects/selected repo');
   });

@@ -5,6 +5,7 @@ import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } fr
 import { tags } from '@lezer/highlight';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { createEditorSearchPanel } from './editorSearchPanel';
 
 const highlighting = HighlightStyle.define([
   { tag: tags.keyword, class: 'editor-token-keyword' },
@@ -45,7 +46,8 @@ export default function CodeEditor({ file, content, readOnly, onChange, onSave }
     const mode = new Compartment();
     const editor = new EditorView({ parent: host.current!, state: EditorState.create({ doc: content, extensions: [
       lineNumbers(), drawSelection(), highlightActiveLine(), history(), indentOnInput(), bracketMatching(),
-      syntaxHighlighting(highlighting), search({ top: true }), highlightSelectionMatches(),
+      syntaxHighlighting(highlighting), search({ top: true, createPanel: createEditorSearchPanel }), highlightSelectionMatches(),
+      EditorState.phrases.of({ 'current match': '当前匹配', 'on line': '位于行', 'replaced match on line $': '已替换第 $ 行的匹配', 'replaced $ matches': '已替换 $ 处匹配' }),
       EditorView.contentAttributes.of({ 'aria-label': `编辑文件 ${file}`, spellcheck: 'false' }),
       keymap.of([{ key: 'Mod-s', run: () => { callbacks.current.onSave(); return true; } }, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       editable.current.of(EditorState.readOnly.of(readOnly)), mode.of([]),

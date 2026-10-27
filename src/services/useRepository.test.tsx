@@ -74,12 +74,27 @@ describe('文件编辑与仓库操作协调', () => {
     vi.spyOn(project, 'saveFile').mockResolvedValueOnce({ file: text, snapshot: null, refreshError: 'Git unavailable' })
       .mockRejectedValueOnce(new Error('external change'));
     await act(async () => { expect(await repository.saveFile(initial.path, 'clean.ts', 'original', 'saved\n')).toEqual(text); });
-    expect(repository.notice?.message).toContain('文件已保存');
+    expect(repository.notices.at(-1)?.message).toContain('文件已保存');
     expect(repository.snapshot).toEqual(initial);
     await act(async () => { await expect(repository.saveFile(initial.path, 'clean.ts', 'saved-version', 'next')).rejects.toThrow('external change'); });
     expect(repository.busy).toBe(false);
     await act(async () => { expect(await repository.saveFile('X:/Projects/Other', 'clean.ts', 'original', 'saved')).toBeNull(); });
     expect(project.saveFile).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('切换分支错误提示', () => {
+  it.each([false, true])('本地修改阻止切换时显示中文并保留当前分支（远程：%s）', async remote => {
+    const raw = 'error: Your local changes to the following files would be overwritten by checkout:\n\tpackage-lock.json\nPlease commit your changes or stash them before you switch branches.\nAborting';
+    vi.spyOn(git, 'checkout').mockRejectedValue(new Error(raw));
+    await act(async () => { expect(await repository.checkout(remote ? 'origin/other' : 'other', remote)).toBe(false); });
+    const notice = repository.notices.at(-1);
+    expect(notice?.error).toBe(true);
+    expect(notice?.message).toContain('切换分支失败');
+    expect(notice?.message).toContain('package-lock.json');
+    expect(notice?.message).not.toContain('Your local changes');
+    expect(repository.snapshot.branch).toBe('main');
+    expect(repository.busy).toBe(false);
   });
 });
 
@@ -211,7 +226,7 @@ describe('仓库刷新协调', () => {
     vi.mocked(git.open).mockRejectedValueOnce(new Error('读取失败'));
     await act(async () => { await repository.refresh(); });
     expect(repository.snapshot).toBe(initial);
-    expect(repository.notice?.message).toContain('读取失败');
+    expect(repository.notices.at(-1)?.message).toContain('读取失败');
     const next = { ...initial, head: 'recovered' };
     vi.mocked(git.open).mockResolvedValueOnce(next);
     await act(async () => { await repository.refresh(); });
@@ -248,7 +263,7 @@ describe('打开项目后获取远程更新', () => {
     expect(await joined).toBe(true);
     expect(repository.snapshot).toBe(updated);
     expect(repository.syncing).toBe(false);
-    expect(repository.notice?.message).toBe('远程分支和提交记录已更新');
+    expect(repository.notices.at(-1)?.message).toBe('远程分支和提交记录已更新');
   });
 
   it('同步结束时使旧的本地刷新失效，避免重新显示过期的远程状态', async () => {
@@ -308,7 +323,7 @@ describe('打开项目后获取远程更新', () => {
     expect(repository.snapshot).toBe(other);
     expect(repository.syncing).toBe(true);
     await act(async () => { alpha.reject(new Error('Alpha disconnected')); });
-    expect(repository.notice?.message).toBe('已打开 Beta');
+    expect(repository.notices.at(-1)?.message).toBe('已打开 Beta');
     expect(repository.syncing).toBe(true);
     const latest = { ...other, behind: 3 };
     vi.mocked(git.open).mockResolvedValue(latest);
@@ -340,7 +355,7 @@ describe('打开项目后获取远程更新', () => {
     expect(repository.snapshot).toBe(remote);
     expect(repository.busy).toBe(false);
     expect(repository.syncing).toBe(false);
-    expect(repository.notice).toEqual({ message: '获取远程更新失败：无法连接远程 Git 服务器。请检查网络、VPN 或代理设置，并确认服务器可以访问。', error: true });
+    expect(repository.notices.at(-1)).toMatchObject({ message: '获取远程更新失败：无法连接远程 Git 服务器。请检查网络、VPN 或代理设置，并确认服务器可以访问。', error: true });
     expect(repository.activities[0].details).toBe('offline');
     vi.mocked(git.open).mockResolvedValue(updated);
     await act(async () => { void repository.fetch(); });

@@ -18,6 +18,7 @@ import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { ProjectNotesDialog } from './components/ProjectNotesDialog';
+import { ToastStack } from './components/notifications/ToastStack';
 import { FileTree } from './components/files/FileTree';
 import { FileEditorDialog } from './components/files/FileEditorDialog';
 import { useFileEditor } from './components/files/useFileEditor';
@@ -334,12 +335,6 @@ export default function App({ onReady }: { onReady: () => void }) {
     else if (!staged && !current.unstaged && current.staged) setStaged(true);
   }, [snapshot, selected]);
 
-  useEffect(() => {
-    if (!repo.notice) return;
-    const timeout = window.setTimeout(() => repo.setNotice(null), 5000);
-    return () => clearTimeout(timeout);
-  }, [repo.notice, repo.setNotice]);
-
   const focusPanel = (id: PanelId) => {
     if (!hasRepository) { setModal('open'); return; }
     if (panels.layout.hidden.includes(id)) {
@@ -532,7 +527,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     {discardConfirmation && (discardConfirmation.overlay ? createPortal(<DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />, document.body) : <DiscardChangesDialog {...discardConfirmation} busy={busy} onCancel={() => { if (!busy) setDiscardConfirmation(null); }} onConfirm={() => { void confirmDiscard(); }} />)}
     {conflictFile && createPortal(<ConflictResolutionDialog key={`${snapshot.path}:${conflictFile}`} path={snapshot.path} file={conflictFile} operation={snapshot.operation} busy={busy} onResolve={repo.resolveConflict} onClose={() => setConflictFile(null)} />, document.body)}
     {blockDiscard && createPortal(<DiscardBlockDialog {...blockDiscard} untracked={Boolean(snapshot.files.find(file => file.path === blockDiscard.file)?.untracked)} busy={busy} onCancel={() => { if (!busy) setBlockDiscard(null); }} onConfirm={() => { void confirmBlockDiscard(); }} />, document.body)}
-    {repo.notice && <div className={`toast ${repo.notice.error ? 'error' : ''}`} role={repo.notice.error ? 'alert' : 'status'}>{repo.notice.error ? <IconX size={17} /> : <IconCheck size={17} />}<span>{repo.notice.message}</span><button aria-label="关闭提示" onClick={() => repo.setNotice(null)}><IconX size={14} /></button></div>}
+    {repo.notices.length > 0 && createPortal(<ToastStack notices={repo.notices} onDismiss={repo.dismissNotice} />, document.body)}
   </div>;
 }
 
