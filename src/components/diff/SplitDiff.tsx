@@ -3,25 +3,27 @@ import type { DiffBlock, FileComparison } from '../../services/git';
 import { IconArrowBackUp } from '@tabler/icons-react';
 import { buildComparisonChanges, buildComparisonRows, getDiffBlocks, type ComparisonChange, type SourceLine } from './model';
 import { ChangeOverview } from './ChangeOverview';
-import { Syntax } from './Syntax';
+import { changeHighlightClass, DiffNavigation, DiffText, useDiffNavigation, type ChangeRange } from './DiffNavigation';
 
 const ROW_HEIGHT = 24;
 const OVERSCAN = 20;
 
-const SourceRow = memo(function SourceRow({ line, block, blockNumber, onDiscardBlock, discardBlockDisabled }: { line: SourceLine | null; block?: DiffBlock; blockNumber?: number; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean }) {
-  return <div className={`source-line ${line?.kind ?? 'empty'}`}>
+const SourceRow = memo(function SourceRow({ line, row, query, currentStart, currentChange, block, blockNumber, onDiscardBlock, discardBlockDisabled }: { line: SourceLine | null; row: number; query: string; currentStart?: number; currentChange?: ChangeRange; block?: DiffBlock; blockNumber?: number; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean }) {
+  return <div className={`source-line ${line?.kind ?? 'empty'}${changeHighlightClass(Math.floor(row / 2), currentChange)}`} data-search-line={row}>
     <span className="source-line-number" aria-hidden="true">{line?.number ?? ''}</span>
     <span className="source-line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${blockNumber}`} title="撤回该变更块，保留其他更改" disabled={discardBlockDisabled} onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : <span aria-hidden="true">{line?.kind === 'added' ? '+' : line?.kind === 'removed' ? '−' : ''}</span>}</span>
-    <code>{line && <Syntax text={line.text} />}</code>
+    <code>{line && <DiffText text={line.text} query={query} currentStart={currentStart} />}</code>
   </div>;
 });
 
-export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath, onDiscardBlock, discardBlockDisabled }: {
+export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPath, modifiedPath, onDiscardBlock, discardBlockDisabled, interactive = false }: {
   comparison: FileComparison;
   originalLabel: string; modifiedLabel: string; originalPath: string; modifiedPath: string;
   onDiscardBlock?: (block: DiffBlock) => void;
   discardBlockDisabled?: boolean;
+  interactive?: boolean;
 }) {
+  const view = useRef<HTMLDivElement>(null);
   const rows = useMemo(() => buildComparisonRows(comparison), [comparison.diff, comparison.unchanged]);
   const changes = useMemo(() => buildComparisonChanges(rows), [rows]);
   const blockStarts = useMemo(() => {
@@ -82,14 +84,36 @@ export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPa
       setViewport(current => current.row === row ? current : { ...current, row });
     });
   }
-  const jumpToChange = useCallback((change: ComparisonChange) => {
+  const jumpToRow = useCallback((row: number) => {
     const original = originalRef.current;
     if (!original) return;
-    original.scrollTop = Math.max(0, change.start * ROW_HEIGHT - viewport.height / 3);
-    // The native scroll event performs synchronization and virtual window updates.
-    original.focus({ preventScroll: true });
-  }, [viewport.height]);
-  return <div className="split-diff">
+    const top = Math.max(0, Math.min(row * ROW_HEIGHT - viewport.height / 3, Math.max(0, rows.length * ROW_HEIGHT - viewport.height)));
+    original.scrollTop = top;
+    if (modifiedRef.current) modifiedRef.current.scrollTop = top;
+    scrollTopRef.current = top;
+    setViewport(current => ({ ...current, row: Math.floor(top / ROW_HEIGHT) }));
+    updateOverview(top);
+  }, [rows.length, viewport.height, updateOverview]);
+  const lines = useMemo(() => interactive ? rows.flatMap(row => [row.original?.text ?? '', row.modified?.text ?? '']) : [], [rows, interactive]);
+  const changeLines = useMemo(() => interactive ? changes.map(change => change.start * 2) : [], [changes, interactive]);
+  const navigation = useDiffNavigation(lines, changeLines, (line, start) => {
+    jumpToRow(Math.floor(line / 2));
+    if (start !== undefined) requestAnimationFrame(() => {
+      const target = view.current?.querySelector<HTMLElement>(`[data-search-line="${line}"] [data-search-start="${start}"]`);
+      const viewport = target?.closest<HTMLElement>('.split-source-scroll');
+      if (target && viewport) {
+        const bounds = target.getBoundingClientRect(); const visible = viewport.getBoundingClientRect();
+        if (bounds.left < visible.left || bounds.right > visible.right) viewport.scrollLeft += bounds.left - visible.left - viewport.clientWidth / 3;
+      }
+    });
+  });
+  const jumpToChange = useCallback((change: ComparisonChange) => {
+    jumpToRow(change.start);
+    originalRef.current?.focus({ preventScroll: true });
+  }, [jumpToRow]);
+  return <div className="split-diff-view" ref={view} onKeyDown={event => {
+    if (interactive && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); view.current?.querySelector<HTMLInputElement>('[aria-label="在差异中搜索"]')?.focus(); }
+  }}>{interactive && <DiffNavigation navigation={navigation} />}<div className="split-diff">
     <ChangeOverview changes={changes} rowCount={rows.length} viewportRef={overviewViewportRef} height={viewport.height} rowHeight={ROW_HEIGHT} onJump={jumpToChange} />
     {(['original', 'modified'] as const).map(side => {
       const original = side === 'original';
@@ -101,11 +125,12 @@ export function SplitDiff({ comparison, originalLabel, modifiedLabel, originalPa
           {rows.length ? <div className="source-lines" style={{ height: rows.length * ROW_HEIGHT, width: `max(100%, calc(${widths[side]}ch + 88px))` }}>
             <div className="source-visible-lines" style={{ top: start * ROW_HEIGHT }}>{rows.slice(start, end).map((row, index) => {
               const action = !original ? blockStarts.get(start + index) : undefined;
-              return <SourceRow line={row[side]} block={action?.block} blockNumber={action?.number} onDiscardBlock={onDiscardBlock} discardBlockDisabled={discardBlockDisabled} key={start + index} />;
+              const line = (start + index) * 2 + (original ? 0 : 1);
+              return <SourceRow line={row[side]} row={line} query={navigation.query} currentStart={navigation.current?.line === line ? navigation.current.start : undefined} currentChange={changes[navigation.changeIndex]} block={action?.block} blockNumber={action?.number} onDiscardBlock={onDiscardBlock} discardBlockDisabled={discardBlockDisabled} key={start + index} />;
             })}</div>
           </div> : <div className="diff-empty"><span>{exists ? '空文件' : '此版本中没有该文件'}</span></div>}
         </div>
       </section>;
     })}
-  </div>;
+  </div></div>;
 }

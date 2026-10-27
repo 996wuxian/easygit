@@ -8,13 +8,14 @@ import { confirmPendingChanges } from './pendingChanges';
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean; details?: string }
 export interface Notice { id: string; message: string; error: boolean }
+export interface RepositoryTask { kind: string; label: string }
 interface RemoteRequest { path: string; session: number; reading: boolean; promise: Promise<boolean>; complete: (updated: boolean) => void }
 interface RefreshRequest { path: string; token: number; promise: Promise<boolean>; notified: boolean; force: boolean }
 const RECENTS_KEY = 'esaygit.recent.v1';
 function loadRecents(): RecentRepository[] {
   try {
     const data: unknown = JSON.parse(appStorage.getItem(RECENTS_KEY) ?? '[]');
-    return Array.isArray(data) ? data.filter((v): v is RecentRepository => v && typeof v.name === 'string' && typeof v.path === 'string' && !v.path.startsWith('demo:')).slice(0, 8) : [];
+    return Array.isArray(data) ? data.filter((v): v is RecentRepository => v && typeof v.name === 'string' && typeof v.path === 'string' && !v.path.startsWith('demo:')) : [];
   } catch { return []; }
 }
 function remember(recents: RecentRepository[]) {
@@ -25,6 +26,9 @@ export function useRepository(onReady: () => void) {
   const [snapshot, setSnapshot] = useState<RepositorySnapshot>(emptyRepository);
   const [recents, setRecents] = useState(loadRecents);
   const [busy, setBusy] = useState(false);
+  const [activeOperation, setActiveOperation] = useState<RepositoryTask | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshCount = useRef(0);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [gitVersion, setGitVersion] = useState('');
@@ -79,6 +83,7 @@ export function useRepository(onReady: () => void) {
     if (!await confirmPendingChanges() || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
+    setActiveOperation({ kind: 'open', label: '正在打开仓库…' });
     const token = ++generation.current;
     try {
       const next = await git.open(path.trim());
@@ -90,7 +95,7 @@ export function useRepository(onReady: () => void) {
       snapshotRef.current = next;
       setSnapshot(next);
       setRecents(current => {
-        const updated = [{ name: next.name, path: next.path }, ...current.filter(item => item.path !== next.path)].slice(0, 8);
+        const updated = [{ name: next.name, path: next.path }, ...current.filter(item => item.path !== next.path)];
         remember(updated);
         return updated;
       });
@@ -98,7 +103,7 @@ export function useRepository(onReady: () => void) {
       void fetch();
       return true;
     } catch (error) { notify(String(error), true); return false; }
-    finally { busyRef.current = false; setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); setActiveOperation(null); }
   }, [fetch, notify]);
 
   useEffect(() => {
@@ -141,6 +146,7 @@ export function useRepository(onReady: () => void) {
       refreshRequest.current = request;
     }
     if (!quiet) request.force = true;
+    if (!quiet) { refreshCount.current++; setRefreshing(true); }
     try {
       const updated = await request.promise;
       if (updated && token === generation.current && !busyRef.current && !quiet && !request.notified) {
@@ -156,6 +162,7 @@ export function useRepository(onReady: () => void) {
       return false;
     } finally {
       if (refreshRequest.current === request) refreshRequest.current = null;
+      if (!quiet) { refreshCount.current--; setRefreshing(refreshCount.current > 0); }
     }
   }, [notify]);
 
@@ -231,13 +238,14 @@ export function useRepository(onReady: () => void) {
     };
   }, [hasRepository, snapshot.path, refresh]);
 
-  const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>, formatError: (error: unknown) => string = String) => {
+  const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>, formatError: (error: unknown) => string = String, task: RepositoryTask = { kind: 'operation', label: '正在执行仓库操作…' }) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
     const expectedPath = snapshotRef.current.path;
     if (!await confirmPendingChanges() || busyRef.current || snapshotRef.current.path !== expectedPath) return false;
     busyRef.current = true;
     setBusy(true);
     const current = snapshotRef.current;
+    setActiveOperation(task);
     const token = ++generation.current;
     try {
       const next = await operation(current.path);
@@ -248,13 +256,14 @@ export function useRepository(onReady: () => void) {
       notify(result.message, result.error ?? false);
       return true;
     } catch (error) { notify(formatError(error), true); return false; }
-    finally { busyRef.current = false; setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); setActiveOperation(null); }
   }, [notify]);
 
   const saveFile = async (expectedPath: string, file: string, revision: string, content: string): Promise<ProjectText | null> => {
     if (busyRef.current || snapshotRef.current.path !== expectedPath) return null;
     busyRef.current = true;
     setBusy(true);
+    setActiveOperation({ kind: 'save', label: `正在保存 ${file}…` });
     const token = ++generation.current;
     try {
       const result = await project.saveFile(expectedPath, file, revision, content);
@@ -262,27 +271,27 @@ export function useRepository(onReady: () => void) {
       if (result.snapshot) { snapshotRef.current = result.snapshot; setSnapshot(result.snapshot); }
       notify(result.refreshError ? `文件已保存，Git 状态刷新失败：${result.refreshError}` : `已保存 ${file}`, Boolean(result.refreshError));
       return result.file;
-    } finally { busyRef.current = false; setBusy(false); }
+    } finally { busyRef.current = false; setBusy(false); setActiveOperation(null); }
   };
 
-  const runOutcome = async (label: string, action: (path: string) => Promise<PullResult>) => {
+  const runOutcome = async (label: string, action: (path: string) => Promise<PullResult>, task: RepositoryTask) => {
     let outcome: PullResult | undefined;
     const updated = await run(() => ({ message: outcome?.error ? `${label}未完成：${outcome.error}` : outcome?.conflicted ? '当前操作后仍有冲突，请在工作区继续处理' : label, error: Boolean(outcome?.error || outcome?.conflicted) }), async path => {
       outcome = await action(path);
       return outcome.snapshot;
-    });
+    }, undefined, task);
     return updated && Boolean(outcome && !outcome.error && !outcome.conflicted);
   };
-  const saveStash = (message: string, includeUntracked: boolean) => runOutcome('已保存 stash', path => git.saveStash(path, message, includeUntracked));
-  const actOnStash = (entry: StashEntry, action: StashAction) => runOutcome(action === 'drop' ? '已删除 stash' : action === 'pop' ? '已恢复并删除 stash' : '已恢复 stash（保留记录）', path => git.actOnStash(path, entry, action));
-  const actOnOperation = (request: OperationRequest) => runOutcome(request.action === 'abort' ? '已取消当前 Git 操作' : request.action === 'skip' ? '已跳过当前提交' : '已继续当前 Git 操作', path => git.actOnOperation(path, request));
-  const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths));
-  const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths));
-  const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回全部未暂存更改', path => git.discard(path, paths));
-  const discardBlock = (file: string, block: DiffBlock) => run('已撤回所选变更块，其他更改已保留', path => git.discardBlock(path, file, block));
-  const resolveConflict = (file: string, revision: string, resolution: ConflictResolution, content?: string) => run('冲突已解决并暂存', path => git.resolveConflict(path, file, revision, resolution, content));
-  const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()));
-  const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action));
+  const saveStash = (message: string, includeUntracked: boolean) => runOutcome('已保存 stash', path => git.saveStash(path, message, includeUntracked), { kind: 'stash', label: '正在保存 stash…' });
+  const actOnStash = (entry: StashEntry, action: StashAction) => runOutcome(action === 'drop' ? '已删除 stash' : action === 'pop' ? '已恢复并删除 stash' : '已恢复 stash（保留记录）', path => git.actOnStash(path, entry, action), { kind: 'stash', label: action === 'drop' ? '正在删除 stash…' : '正在恢复 stash…' });
+  const actOnOperation = (request: OperationRequest) => runOutcome(request.action === 'abort' ? '已取消当前 Git 操作' : request.action === 'skip' ? '已跳过当前提交' : '已继续当前 Git 操作', path => git.actOnOperation(path, request), { kind: 'operation', label: request.action === 'abort' ? '正在取消当前 Git 操作…' : request.action === 'skip' ? '正在跳过当前提交…' : '正在继续当前 Git 操作…' });
+  const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths), undefined, { kind: 'stage', label: `正在暂存 ${paths.length} 个文件…` });
+  const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths), undefined, { kind: 'unstage', label: `正在取消暂存 ${paths.length} 个文件…` });
+  const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回所选文件的未暂存更改', path => git.discard(path, paths), undefined, { kind: 'discard', label: `正在撤回 ${paths.length} 个文件的更改…` });
+  const discardBlock = (file: string, block: DiffBlock) => run('已撤回所选变更块，其他更改已保留', path => git.discardBlock(path, file, block), undefined, { kind: 'discard', label: '正在撤回所选变更块…' });
+  const resolveConflict = (file: string, revision: string, resolution: ConflictResolution, content?: string) => run('冲突已解决并暂存', path => git.resolveConflict(path, file, revision, resolution, content), undefined, { kind: 'resolve', label: '正在保存冲突解决结果…' });
+  const commit = (message: string) => run('提交已创建', path => git.commit(path, message.trim()), undefined, { kind: 'commit', label: '正在创建提交…' });
+  const actOnCommit = (commit: string, expectedHead: string, expectedBranch: string, action: CommitAction) => run(action === 'soft' ? '已撤回提交，更改保留在暂存区' : action === 'mixed' ? '已撤回提交，更改保留在工作区' : '已创建反向提交', path => git.actOnCommit(path, commit, expectedHead, expectedBranch, action), undefined, { kind: 'commit-action', label: action === 'revert' ? '正在创建反向提交…' : '正在撤回提交…' });
   const cherryPick = async (expectedPath: string, commit: string, expectedHead: string, expectedBranch: string) => {
     if (snapshotRef.current.path !== expectedPath) return false;
     let outcome: PullResult | undefined;
@@ -291,18 +300,18 @@ export function useRepository(onReady: () => void) {
         ? outcome?.conflicted ? '拣选遇到冲突，请解决并暂存后继续，也可跳过或取消操作' : '拣选已暂停，请查看操作提示；没有新更改时可跳过当前提交'
         : outcome?.error ? `拣选未完成：${outcome.error}` : `已拣选提交到 ${next.branch}`,
       error: Boolean(outcome?.error || outcome?.conflicted),
-    }), async path => { outcome = await git.cherryPick(path, commit, expectedHead, expectedBranch); return outcome.snapshot; });
+    }), async path => { outcome = await git.cherryPick(path, commit, expectedHead, expectedBranch); return outcome.snapshot; }, undefined, { kind: 'cherry-pick', label: '正在拣选提交…' });
     return updated && Boolean(outcome && (outcome.snapshot.operation === 'cherry-pick' || !outcome.error));
   };
-  const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote), formatCheckoutError);
+  const checkout = (branch: string, remote = false) => run(next => ({ message: remote ? `已切换到本地 ${next.branch}（跟踪 ${branch}）` : `已切换到 ${next.branch}` }), path => git.checkout(path, branch, remote), formatCheckoutError, { kind: 'checkout', label: `正在切换到 ${branch}…` });
   const createBranch = (branch: string) => {
     const base = snapshotRef.current.branch || '当前提交';
-    return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch));
+    return run(`已从 ${base} 创建并切换到 ${branch}`, path => git.createBranch(path, branch), undefined, { kind: 'create-branch', label: `正在创建并切换到 ${branch}…` });
   };
   const manageBranch = (expectedPath: string, request: BranchRequest) => {
     if (snapshotRef.current.path !== expectedPath) return Promise.resolve(false);
     const labels = { rename: '分支已重命名', delete: '本地分支已删除', upstream: '已设置分支上游', 'unset-upstream': '已取消分支上游' };
-    return run(labels[request.action.kind], path => git.manageBranch(path, request));
+    return run(labels[request.action.kind], path => git.manageBranch(path, request), undefined, { kind: 'branch', label: '正在更新分支设置…' });
   };
   const pull = () => {
     let conflicted = false;
@@ -316,15 +325,16 @@ export function useRepository(onReady: () => void) {
       conflicted = result.conflicted;
       pullError = result.error;
       return result.snapshot;
-    }, formatPullError);
+    }, formatPullError, { kind: 'pull', label: '正在拉取更新…' });
   };
-  const push = () => run('更改已推送到远程仓库', path => git.push(path));
+  const push = () => run('更改已推送到远程仓库', path => git.push(path), undefined, { kind: 'push', label: '正在推送当前分支…' });
   const merge = useCallback(async (preview: MergePreview) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
     const expectedPath = snapshotRef.current.path;
     if (!await confirmPendingChanges() || busyRef.current || snapshotRef.current.path !== expectedPath) return false;
     busyRef.current = true;
     setBusy(true);
+    setActiveOperation({ kind: 'merge', label: `正在合并 ${preview.source} → ${preview.localTarget}…` });
     const token = ++generation.current;
     try {
       const result = await git.mergeBranches(snapshotRef.current.path, preview);
@@ -341,6 +351,7 @@ export function useRepository(onReady: () => void) {
     } finally {
       busyRef.current = false;
       setBusy(false);
+      setActiveOperation(null);
     }
   }, [notify]);
   const removeWorkspace = useCallback((workspace: RecentRepository) => {
@@ -366,5 +377,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, activeOperation, refreshing, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

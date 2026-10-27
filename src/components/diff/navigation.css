@@ -1,0 +1,19 @@
+.diff-navigation { position: sticky; top: 0; left: 0; z-index: 3; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 5px 10px; border-bottom: 1px solid var(--border); background: var(--bg-card); font: 11px/1.4 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+.diff-navigation-group, .diff-file-navigation { display: flex; align-items: center; flex-shrink: 0; gap: 2px; }
+.diff-navigation .icon-button, .diff-file-navigation .icon-button { width: 24px; height: 25px; }
+.diff-navigation-count { min-width: 30px; text-align: center; color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diff-search-field { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 90px; height: 27px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--text-muted); background: var(--bg-soft); }
+.diff-search-field input { flex: 1; width: 0; min-width: 0; padding: 0; border: 0; outline: none; box-shadow: none; background: transparent; font-size: 11px; }
+.diff-search-field:focus-within { border-color: var(--text-muted); box-shadow: 0 0 0 2px var(--border); }
+.diff-search-field input:focus { outline: none; box-shadow: none; }
+.diff-search-match { padding: 0; border-radius: 2px; color: inherit; background: #f5cc6480; }
+.diff-search-match.current { background: #f4af46; color: #202124; outline: 1px solid #986300; }
+.diff-change-current { --diff-change-marker: #62666d; position: relative; }
+.diff-change-current::before { position: absolute; top: 0; bottom: 0; left: 0; width: 3px; content: ''; background: var(--diff-change-marker); pointer-events: none; }
+.diff-change-start::before { top: 1px; border-top-left-radius: 3px; border-top-right-radius: 3px; }
+.diff-change-end::before { bottom: 1px; border-bottom-left-radius: 3px; border-bottom-right-radius: 3px; }
+:root[data-theme='dark'] .diff-change-current { --diff-change-marker: #969aa3; }
+.diff-interactive-view { min-width: 0; }
+.large-diff.diff-interactive-view { min-width: 0; }
+.split-diff-view { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.split-diff-view > .split-diff { flex: 1; min-height: 0; }

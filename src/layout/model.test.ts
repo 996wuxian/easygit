@@ -33,6 +33,12 @@ describe("workspace layout persistence", () => {
     const onlyChanges = { ...defaultPanelLayout(), hidden: PANEL_IDS.filter((id) => id !== "changes") };
     expect(togglePanelInLayout(onlyChanges, "changes")).toBe(onlyChanges);
   });
+  it('兼容旧布局并校验保存的面板尺寸', () => {
+    const layout = defaultPanelLayout();
+    expect(normalizePanelLayout(layout)).toEqual(layout);
+    expect(normalizePanelLayout({ ...layout, sizes: { changes: { span: 4.375, height: 350 } } }).sizes?.changes).toEqual({ span: 4.375, height: 350 });
+    expect(normalizePanelLayout({ ...layout, sizes: { changes: { span: 99, height: 20 }, diff: { span: NaN, height: 400 }, files: { span: 6, height: 480 } } }).sizes).toEqual({ changes: { span: 12, height: 180 }, files: { span: 6, height: 480 } });
+  });
 });
 
 describe("panel movement", () => {

@@ -2,11 +2,13 @@ import { appStorage } from '../services/storage';
 
 export const PANEL_IDS = ["changes", "diff", "branches", "commits", "stash", "activity", "scripts", "files"] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
+export interface PanelSize { span: number; height: number }
 
 export interface PanelLayout {
   version: 1;
   order: PanelId[];
   hidden: PanelId[];
+  sizes?: Partial<Record<PanelId, PanelSize>>;
 }
 
 export const PANEL_LAYOUT_STORAGE_KEY = "esaygit.workspace-layout.v1";
@@ -29,7 +31,18 @@ export function normalizePanelLayout(value: unknown): PanelLayout {
   for (const id of PANEL_IDS) if (!order.includes(id)) order.push(id);
   const hidden = [...new Set(input.hidden.filter(isPanelId))];
   // A valid saved layout must always leave an accessible workspace.
-  return { version: 1, order, hidden: hidden.length === PANEL_IDS.length ? [] : hidden };
+  const sizes: Partial<Record<PanelId, PanelSize>> = {};
+  if (input.sizes && typeof input.sizes === 'object') {
+    for (const id of PANEL_IDS) {
+      const size = input.sizes[id];
+      if (size && Number.isFinite(size.span) && Number.isFinite(size.height)) sizes[id] = clampPanelSize(size);
+    }
+  }
+  return { version: 1, order, hidden: hidden.length === PANEL_IDS.length ? [] : hidden, ...(Object.keys(sizes).length ? { sizes } : {}) };
+}
+
+export function clampPanelSize(size: PanelSize): PanelSize {
+  return { span: Math.max(3, Math.min(12, Math.round(size.span * 1000) / 1000)), height: Math.max(180, Math.min(1200, Math.round(size.height))) };
 }
 
 export function readPanelLayout(storage?: Pick<Storage, "getItem">): PanelLayout {

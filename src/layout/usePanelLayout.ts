@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { appStorage } from '../services/storage';
 import {
   defaultPanelLayout,
+  clampPanelSize,
   movePanelInLayout,
   PANEL_LAYOUT_STORAGE_KEY,
   readPanelLayout,
   togglePanelInLayout,
   visiblePanelIds,
   type PanelId,
+  type PanelSize,
 } from "./model";
 
 export function usePanelLayout() {
@@ -29,6 +31,14 @@ export function usePanelLayout() {
     setLayout((current) => movePanelInLayout(current, active, target));
   }, []);
   const resetLayout = useCallback(() => setLayout(defaultPanelLayout()), []);
+  const resizePanel = useCallback((id: PanelId, size: PanelSize | null) => {
+    setLayout(current => {
+      const sizes = { ...current.sizes };
+      if (size) sizes[id] = clampPanelSize(size);
+      else delete sizes[id];
+      return { ...current, sizes };
+    });
+  }, []);
 
-  return { layout, visiblePanels, storageError, togglePanel, movePanel, resetLayout };
+  return { layout, visiblePanels, storageError, togglePanel, movePanel, resizePanel, resetLayout };
 }

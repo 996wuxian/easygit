@@ -83,6 +83,26 @@ describe('文件编辑与仓库操作协调', () => {
   });
 });
 
+describe('仓库操作进度', () => {
+  it('显示具体操作，串行操作不会覆盖状态，成功和失败后都清理', async () => {
+    const staging = deferred();
+    vi.spyOn(git, 'stage').mockReturnValue(staging.promise);
+    vi.spyOn(git, 'commit').mockResolvedValue(initial);
+    let result!: Promise<boolean>;
+    await act(async () => { result = repository.stage(['a.ts', 'b.ts']); });
+    expect(repository.activeOperation).toEqual({ kind: 'stage', label: '正在暂存 2 个文件…' });
+    await act(async () => { expect(await repository.commit('blocked')).toBe(false); });
+    expect(repository.activeOperation?.kind).toBe('stage');
+    await act(async () => { staging.resolve(initial); await result; });
+    expect(repository.activeOperation).toBeNull();
+    const pushing = deferred(); vi.spyOn(git, 'push').mockReturnValue(pushing.promise);
+    await act(async () => { result = repository.push(); });
+    expect(repository.activeOperation?.kind).toBe('push');
+    await act(async () => { pushing.reject(new Error('network unavailable')); await result; });
+    expect(repository.busy).toBe(false); expect(repository.activeOperation).toBeNull();
+  });
+});
+
 describe('切换分支错误提示', () => {
   it.each([false, true])('本地修改阻止切换时显示中文并保留当前分支（远程：%s）', async remote => {
     const raw = 'error: Your local changes to the following files would be overwritten by checkout:\n\tpackage-lock.json\nPlease commit your changes or stash them before you switch branches.\nAborting';

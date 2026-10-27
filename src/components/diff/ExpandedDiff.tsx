@@ -5,6 +5,7 @@ import { Dialog } from '../Dialog';
 import { ComparisonFileSelect } from './ComparisonFileSelect';
 import { SplitDiff } from './SplitDiff';
 import { UnifiedDiff } from './UnifiedDiff';
+import { DiffFileNavigation } from './DiffNavigation';
 import { countDiffChanges } from './model';
 import { DiffFileActions, type DiffActions } from './DiffFileActions';
 import './diff.css';
@@ -38,7 +39,8 @@ export function ExpandedDiff({ snapshot, selected, staged, compactDiff, compactH
     const guard = (event: KeyboardEvent) => {
       const topDialog = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).at(-1);
       if (topDialog && !topDialog.classList.contains('diff-fullscreen-dialog')) return;
-      if (((event.ctrlKey || event.metaKey) && ['k', 'o'].includes(event.key.toLowerCase())) || event.key === '/') {
+      const editing = event.target instanceof HTMLElement && Boolean(event.target.closest('input, textarea, [contenteditable="true"]'));
+      if (((event.ctrlKey || event.metaKey) && ['k', 'o'].includes(event.key.toLowerCase())) || event.key === '/' && !editing) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -59,11 +61,13 @@ export function ExpandedDiff({ snapshot, selected, staged, compactDiff, compactH
   const discardBlock = !staged && selectedFile?.unstaged && !selectedFile.conflicted && selectedFile.worktreeStatus !== 'R'
     && (mode === 'split' ? comparison && !comparison.binary : compactHasResult)
     ? (block: DiffBlock) => actions.onDiscardBlock(selected, block) : undefined;
+  const files = snapshot.files.filter(file => staged ? file.staged : file.unstaged || file.untracked || file.conflicted);
   const refreshError = mode === 'split' ? comparison && error : compactHasResult && compactError;
 
   return <Dialog title="代码差异 · 全屏" className="diff-fullscreen-dialog" hideHeading onClose={onClose}>
     <div className="expanded-diff-toolbar">
-      <ComparisonFileSelect files={snapshot.files} selected={selected} onSelect={onSelectFile} />
+      <ComparisonFileSelect files={files} selected={selected} onSelect={onSelectFile} />
+      <DiffFileNavigation files={files} selected={selected} onSelect={onSelectFile} />
       <div className="diff-toolbar">
         <div className="segmented"><button className={!staged ? 'active' : ''} onClick={() => onStagedChange(false)}>工作区</button><button className={staged ? 'active' : ''} onClick={() => onStagedChange(true)}>暂存区</button></div>
         <div className="segmented comparison-modes"><button className={mode === 'split' ? 'active' : ''} onClick={() => setMode('split')}>左右比对</button><button className={mode === 'unified' ? 'active' : ''} onClick={() => setMode('unified')}>统一视图</button></div>
@@ -76,9 +80,9 @@ export function ExpandedDiff({ snapshot, selected, staged, compactDiff, compactH
     </div>
     <DiffFileActions {...actions} file={selectedFile} staged={staged} />
     <div className="expanded-diff-body" aria-busy={mode === 'split' ? loading : compactLoading}>
-      {mode === 'unified' ? <div className={`code-scroll ${wrap ? 'wrap-code' : ''}`}>
-        {compactError && !compactHasResult ? <div className="diff-empty"><IconX size={24} /><span>{compactError}</span></div> : compactLoading && !compactHasResult ? <div className="diff-empty"><IconLoader2 className="spin" size={24} /><span>正在读取差异…</span></div> : compactDiff ? <UnifiedDiff key={requestKey} diff={compactDiff} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(compactError)} /> : <div className="diff-empty"><span>当前分区没有差异</span></div>}
-      </div> : error && !comparison || comparison?.binary ? <div className="diff-empty"><IconFileCode size={28} /><span>{error || '二进制或非 UTF-8 文件无法进行源码比对。'}</span><button className="text-button" onClick={() => setMode('unified')}>查看统一差异视图</button></div> : !comparison ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取完整源码…</span></div> : <SplitDiff key={requestKey} comparison={comparison} originalLabel={originalLabel} modifiedLabel={modifiedLabel} originalPath={originalPath} modifiedPath={selected} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(error)} />}
+      {mode === 'unified' ? <div className={`code-scroll diff-code-scroll ${wrap ? 'wrap-code' : ''}`}>
+        {compactError && !compactHasResult ? <div className="diff-empty"><IconX size={24} /><span>{compactError}</span></div> : compactLoading && !compactHasResult ? <div className="diff-empty"><IconLoader2 className="spin" size={24} /><span>正在读取差异…</span></div> : compactDiff ? <UnifiedDiff interactive key={requestKey} diff={compactDiff} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(compactError)} /> : <div className="diff-empty"><span>当前分区没有差异</span></div>}
+      </div> : error && !comparison || comparison?.binary ? <div className="diff-empty"><IconFileCode size={28} /><span>{error || '二进制或非 UTF-8 文件无法进行源码比对。'}</span><button className="text-button" onClick={() => setMode('unified')}>查看统一差异视图</button></div> : !comparison ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取完整源码…</span></div> : <SplitDiff interactive key={requestKey} comparison={comparison} originalLabel={originalLabel} modifiedLabel={modifiedLabel} originalPath={originalPath} modifiedPath={selected} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(error)} />}
     </div>
     <div className="diff-footer"><span>{refreshError ? <span className="diff-refresh-error" role="status" title={String(refreshError)}>刷新失败，显示上次差异</span> : mode === 'split' ? '完整源码 · 左右同步滚动' : '统一差异视图'}</span><span><kbd>Esc</kbd>退出全屏</span></div>
   </Dialog>;

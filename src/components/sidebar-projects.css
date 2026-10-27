@@ -1,0 +1,17 @@
+.repository-expand-toggle { position: absolute; top: 50%; right: -12px; z-index: 702; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; transform: translateY(-50%); border: 1px solid #ffffff24; border-radius: 50%; background: #292b30; color: #a5a9b2; box-shadow: 0 2px 8px #0002; }
+.repository-expand-toggle:hover, .repository-expand-toggle.expanded { color: #fff; background: #36383e; }
+.repository-expand-toggle:focus-visible, .repository-expanded-close:focus-visible, .repository-expanded-item:focus-visible { outline: 2px solid #a1a2a8; outline-offset: 2px; }
+.repository-expanded-panel { position: absolute; top: 0; bottom: 0; left: calc(100% + 8px); z-index: 700; display: flex; flex-direction: column; width: min(230px, calc(100vw - 96px)); min-height: 0; padding: 14px 12px 10px; border: 1px solid #ffffff0d; border-radius: inherit; background: #1c1d20; color: #b5b7bf; box-shadow: 0 8px 28px #0003; }
+.repository-expanded-heading { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-height: 32px; padding: 0 4px 10px; border-bottom: 1px solid #ffffff19; }
+.repository-expanded-heading > strong { color: #f1f1f3; font-size: 13px; font-weight: 550; }
+.repository-expanded-heading > span { color: #8e929b; font: 11px var(--mono); }
+.repository-expanded-close { display: grid; place-items: center; width: 26px; height: 26px; margin-left: auto; padding: 0; border-radius: 7px; color: #9a9ca5; }
+.repository-expanded-close:hover { color: #fff; background: #ffffff0d; }
+.repository-expanded-list { display: flex; flex: 1; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; padding: 10px 3px 3px; scrollbar-color: #45474e transparent; }
+.repository-expanded-item { display: flex; flex-shrink: 0; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 46px; padding: 7px 9px; border: 1px solid transparent; border-radius: 11px; background: transparent; color: #b5b7bf; text-align: left; }
+.repository-expanded-item:hover:not(:disabled):not(.selected) { border-color: #ffffff24; background: #ffffff0d; color: #f1f1f3; }
+.repository-expanded-item.selected { background: #fff; color: #202124; box-shadow: 0 3px 12px #0002; }
+.repository-expanded-initial { display: grid; flex: 0 0 28px; place-items: center; height: 28px; border: 1px solid #ffffff2b; border-radius: 8px; font-size: 13px; font-weight: 550; }
+.repository-expanded-item.selected .repository-expanded-initial { border-color: #20212424; }
+.repository-expanded-name { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-height: 760px) { .repository-expanded-panel { padding-top: 10px; padding-bottom: 8px; } }

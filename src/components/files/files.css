@@ -75,6 +75,5 @@
 .editor-token-tag { color: var(--editor-tag); }
 .editor-token-comment { color: var(--text-muted); font-style: italic; }
 .editor-token-heading { color: var(--text); font-weight: 600; }
-.diff-edit-file { padding: 0 16px 8px; }
 @media (max-width: 900px) { .file-editor-sidebar { width: 200px; } .file-editor-toolbar kbd { display: none; } }
 @media (max-width: 640px) { .file-editor-sidebar { display: none; } .dialog.file-editor-dialog { width: calc(100vw - 16px); height: calc(100vh - 16px); } .file-editor-toolbar { flex-wrap: wrap; } .file-editor-footer { flex-wrap: wrap; } }

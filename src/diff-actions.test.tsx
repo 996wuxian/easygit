@@ -58,15 +58,21 @@ afterEach(async () => {
 });
 
 describe('差异页文件操作', () => {
-  it('普通视图撤回当前文件需要确认，取消不写入', async () => {
+  it('普通视图将文件与导航合并到分区右侧，直接展示差异并去掉冗余操作行', async () => {
     await openWorkspace();
-    await click('撤回当前文件更改');
+    const view = host.querySelector('.diff-content')!;
+    expect(view.querySelector('.diff-file-actions')).toBeNull();
+    expect(view.querySelector('.diff-edit-file')).toBeNull();
+    expect(view.textContent).not.toContain('编辑工作区文件');
+    const toolbar = view.querySelector('.diff-toolbar')!;
+    expect(toolbar.querySelector('.diff-toolbar-main > .segmented')).not.toBeNull();
+    expect(toolbar.querySelector('.diff-file-path')?.textContent).toContain(file.path);
+    expect(toolbar.querySelector('[aria-label="差异文件导航"]')).not.toBeNull();
+    expect(view.querySelector(':scope > .diff-file-path')).toBeNull();
+    expect(view.querySelector('.language-tag')).toBeNull();
+    expect(view.querySelector('.code-line.added code')?.textContent).toBe('new');
+    expect(view.querySelector('[aria-label="在差异中搜索"]')).not.toBeNull();
     expect(git.discard).not.toHaveBeenCalled();
-    await click('取消', document.querySelector('[aria-label="撤回更改"]')!);
-    expect(git.discard).not.toHaveBeenCalled();
-    await click('撤回当前文件更改');
-    await click('确认撤回');
-    expect(git.discard).toHaveBeenCalledWith(workspace.path, [file.path]);
   });
 
   it('全屏撤回的确认框位于最上层，Escape 只关闭确认框', async () => {
@@ -86,14 +92,16 @@ describe('差异页文件操作', () => {
     expect(git.discard).toHaveBeenCalledWith(workspace.path, [file.path]);
   });
 
-  it('暂存和取消暂存从差异页执行，暂存区不显示丢弃工作区内容的入口', async () => {
+  it('全屏仍可暂存和取消暂存，暂存区不显示丢弃工作区内容的入口', async () => {
     await openWorkspace();
-    await click('暂存当前文件');
+    await click('展开代码差异');
+    const fullscreen = document.querySelector('.diff-fullscreen-dialog')!;
+    await click('暂存当前文件', fullscreen);
     expect(git.stage).toHaveBeenCalledWith(workspace.path, [file.path]);
-    expect(host.querySelector('[aria-label="撤回当前文件更改"]')).toBeNull();
-    await click('取消暂存', host.querySelector('.diff-file-actions')!);
+    expect(fullscreen.querySelector('[aria-label="撤回当前文件更改"]')).toBeNull();
+    await click('取消暂存', fullscreen.querySelector('.diff-file-actions')!);
     expect(git.unstage).toHaveBeenCalledWith(workspace.path, [file.path]);
-    expect(host.querySelector('[aria-label="撤回当前文件更改"]')).not.toBeNull();
+    expect(fullscreen.querySelector('[aria-label="撤回当前文件更改"]')).not.toBeNull();
   });
 });
 
