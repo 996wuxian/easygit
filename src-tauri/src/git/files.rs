@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-const MAX_BYTES: usize = 2 * 1024 * 1024;
+pub(super) const MAX_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ENTRIES: usize = 5000;
 
 #[derive(Debug, Serialize)]
@@ -65,7 +65,7 @@ fn reparse(metadata: &fs::Metadata) -> bool {
 
 // Validate every component before following a directory. This also protects
 // worktree .git files, Windows junctions, alternate streams and nested repos.
-fn safe_path(root: &Path, relative: &str, allow_root: bool) -> Result<PathBuf, String> {
+pub(super) fn safe_path(root: &Path, relative: &str, allow_root: bool) -> Result<PathBuf, String> {
     if relative.is_empty() && allow_root {
         return Ok(root.to_owned());
     }

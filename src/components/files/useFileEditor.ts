@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RepositorySnapshot } from '../../services/git';
-import { project, type ProjectText } from '../../services/project';
+import { project, type FilePosition, type ProjectText } from '../../services/project';
 import { registerPendingChangesGuard } from '../../services/pendingChanges';
 
-export interface EditorDocument { repository: string; file: string; original: ProjectText; draft: string; key: number }
+export interface EditorDocument { repository: string; file: string; original: ProjectText; draft: string; key: number; target?: FilePosition & { request: number } }
 interface EditorState { document: EditorDocument | null; visible: boolean; loading: boolean; saving: boolean; error: string; external: boolean; confirming: boolean }
 type Save = (path: string, file: string, revision: string, content: string) => Promise<ProjectText | null>;
 const initial: EditorState = { document: null, visible: false, loading: false, saving: false, error: '', external: false, confirming: false };
@@ -14,6 +14,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
   const saveAction = useRef(onSave);
   saveAction.current = onSave;
   const sequence = useRef(0);
+  const reveal = useRef(0);
   const pending = useRef<{ promise: Promise<boolean>; resolve: (value: boolean) => void } | null>(null);
   const pathRef = useRef(snapshot.path);
   pathRef.current = snapshot.path;
@@ -59,16 +60,18 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
     request?.resolve(choice !== 'cancel');
   }
 
-  async function load(file: string, force = false) {
+  async function load(file: string, force = false, position?: FilePosition) {
+    if (current.current.saving) return;
     const repository = pathRef.current;
     const doc = current.current.document;
-    if (!force && doc?.file === file && doc.repository === repository) { update({ visible: true }); return; }
+    const target = position ? { ...position, request: ++reveal.current } : undefined;
+    if (!force && doc?.file === file && doc.repository === repository) { update({ visible: true, ...(target ? { document: { ...doc, target } } : {}) }); return; }
     if (!await confirmLeave() || repository !== pathRef.current) return;
     const token = ++sequence.current;
     update({ document: null, visible: true, loading: true, error: '', external: false });
     try {
       const original = await project.readFile(repository, file);
-      if (token === sequence.current && repository === pathRef.current) update({ document: { repository, file, original, draft: original.content ?? '', key: token } });
+      if (token === sequence.current && repository === pathRef.current) update({ document: { repository, file, original, draft: original.content ?? '', key: token, target } });
     } catch (error) { if (token === sequence.current) update({ error: String(error) }); }
     finally { if (token === sequence.current) update({ loading: false }); }
   }
@@ -113,7 +116,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
 
   return {
     ...state, dirty: dirty(), save, decide,
-    open: (file: string) => load(file),
+    open: (file: string, position?: FilePosition) => load(file, false, position),
     reload: () => { const doc = current.current.document; if (doc) void load(doc.file, true); },
     close: async () => { if (await confirmLeave()) update({ visible: false }); },
     change: (draft: string) => { const doc = current.current.document; if (doc && !current.current.saving) update({ document: { ...doc, draft } }); },

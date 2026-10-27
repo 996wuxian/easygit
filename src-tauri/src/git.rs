@@ -8,7 +8,9 @@ mod comparison;
 mod diff_blocks;
 pub use diff_blocks::{discard_diff_block, DiffBlock};
 mod conflicts;
+mod file_search;
 mod files;
+pub use file_search::{search_project_files, FileSearchBatch, FileSearchRequest, FileSearchState};
 pub use files::{
     list_project_files, read_project_file, save_project_file, ProjectListing, ProjectText,
     SavedProjectText,

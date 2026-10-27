@@ -79,6 +79,24 @@ async fn list_project_files(
 }
 
 #[tauri::command]
+async fn search_project_files(
+    state: tauri::State<'_, git::FileSearchState>,
+    request: git::FileSearchRequest,
+) -> Result<git::FileSearchBatch, String> {
+    let searches = state.inner().clone();
+    blocking(move || git::search_project_files(&searches, request)).await
+}
+
+#[tauri::command]
+fn cancel_project_search(
+    state: tauri::State<'_, git::FileSearchState>,
+    client: String,
+    generation: u32,
+) -> Result<(), String> {
+    state.cancel(&client, generation)
+}
+
+#[tauri::command]
 async fn read_project_file(path: String, file: String) -> Result<git::ProjectText, String> {
     blocking(move || git::read_project_file(&path, &file)).await
 }
@@ -424,6 +442,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(updates::UpdateState::default())
+        .manage(git::FileSearchState::default())
         .setup(tray::setup)
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -457,6 +476,8 @@ pub fn run() {
             open_repository_directory,
             read_project_scripts,
             list_project_files,
+            search_project_files,
+            cancel_project_search,
             read_project_file,
             save_project_file,
             run_project_script,

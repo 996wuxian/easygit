@@ -39,3 +39,17 @@
 $env:EASYGIT_PERF_REPO='X:\1_2026_project\easygit'
 cargo test --offline --lib profile_repository_refresh -- --ignored --nocapture
 ```
+
+## 项目文件搜索（2026-10-27）
+
+Windows 本机 debug 构建，临时 Git 仓库包含 5000 个小型 UTF-8 文件，每 50 个文件有一处内容匹配，共 100 处。原生搜索首批返回约 224 ms，扫描完成约 3029 ms。该数据仅包括 Rust 搜索，不包括输入防抖、IPC 和前端分批调度，不能代表所有磁盘、文件大小和仓库的耗时。
+
+输入停止 300 ms 后才发起搜索；修改关键词、切换模式或关闭面板会取消旧任务及其 Git 子进程。文件清单只读取一次，内容扫描最多使用 4 个线程，每批以约 40 ms 为调度目标（单次文件系统调用仍可能超时），最多返回 50 条。前端分批让出执行时间，累计 50 条后等待用户继续加载；结果使用虚拟列表，1000 条结果只渲染视口附近的行。搜索不占用仓库写操作锁。
+
+默认尊重 Git 忽略规则，内容搜索额外跳过依赖和构建目录；仅扫描不超过 2 MiB 的 UTF-8 文本，跳过二进制、符号链接及嵌套仓库。每文件最多 20 处，总计最多 1000 处，并在界面显示限制和扫描进度。
+
+复测命令（在 `src-tauri` 执行）：
+
+```powershell
+cargo test --offline --lib profile_large_project_search -- --ignored --nocapture
+```

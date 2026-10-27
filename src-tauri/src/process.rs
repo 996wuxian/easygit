@@ -1,7 +1,10 @@
 use std::{
     io::{self, Read},
     process::{Child, Command, Output, Stdio},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, TryRecvError},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -177,6 +180,7 @@ pub fn output_with_limit(
         timeout,
         PipeLimit::Reject(stdout_limit),
         stderr_limit,
+        None,
     )
 }
 
@@ -191,6 +195,25 @@ pub fn output_with_prefix(
         timeout,
         PipeLimit::Prefix(stdout_prefix),
         stderr_limit,
+        None,
+    )
+}
+
+/// Cancellable read-only tasks retain the same output limits, deadline and
+/// Windows job cleanup, without waiting for the normal process timeout.
+pub fn output_with_cancellation(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_limit: usize,
+    stderr_limit: usize,
+    cancelled: &AtomicBool,
+) -> io::Result<Output> {
+    output_with_policy(
+        command,
+        timeout,
+        PipeLimit::Reject(stdout_limit),
+        stderr_limit,
+        Some(cancelled),
     )
 }
 
@@ -199,7 +222,11 @@ fn output_with_policy(
     timeout: Duration,
     stdout_limit: PipeLimit,
     stderr_limit: usize,
+    cancelled: Option<&AtomicBool>,
 ) -> io::Result<Output> {
+    if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
+    }
     #[cfg(windows)]
     let process_job = ProcessJob::new()?;
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -219,6 +246,10 @@ fn output_with_policy(
     let mut stdout = None;
     let mut stderr = None;
     loop {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            stop_process_tree(&mut child);
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
+        }
         let poll = (|| -> io::Result<()> {
             if status.is_none() {
                 status = child.try_wait()?;
@@ -384,5 +415,26 @@ mod tests {
             !marker.exists(),
             "the descendant must not survive the timeout"
         );
+    }
+
+    #[test]
+    fn cancellation_stops_a_running_child_without_waiting_for_its_timeout() {
+        let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_flag = cancelled.clone();
+        let started = Instant::now();
+        let worker = thread::spawn(move || {
+            output_with_cancellation(
+                &mut fixture_command("sleep"),
+                Duration::from_secs(20),
+                1024,
+                1024,
+                &worker_flag,
+            )
+        });
+        thread::sleep(Duration::from_millis(80));
+        cancelled.store(true, Ordering::Relaxed);
+        let error = worker.join().unwrap().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(started.elapsed() < Duration::from_secs(3));
     }
 }

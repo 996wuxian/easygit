@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconChevronRight, IconFileCode, IconFolder, IconFolderOpen, IconLock, IconRefresh, IconSearch } from '@tabler/icons-react';
 import type { GitFile } from '../../services/git';
-import { project, type ProjectEntry, type ProjectListing } from '../../services/project';
+import { project, type FilePosition, type FileSearchMode, type ProjectEntry, type ProjectListing } from '../../services/project';
+import { ProjectSearchResults } from './ProjectSearchResults';
 import './files.css';
 
 interface TreeProps {
-  repository: string; files: GitFile[]; refreshKey: string; selected?: string;
-  onOpen: (file: string) => void;
+  repository: string; files: GitFile[]; refreshKey: string; selected?: string; revision?: string;
+  onOpen: (file: string, position?: FilePosition) => void;
 }
 interface DirectoryProps extends TreeProps { directory: string; showIgnored: boolean; query?: string }
 
@@ -66,12 +67,14 @@ function Entry({ entry, ...props }: DirectoryProps & { entry: ProjectEntry }) {
 export function FileTree(props: TreeProps) {
   const [showIgnored, setShowIgnored] = useState(false);
   const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
+  const [mode, setMode] = useState<FileSearchMode>('name');
   const [refresh, setRefresh] = useState(0);
-  useEffect(() => { const timer = window.setTimeout(() => setSearch(query), 250); return () => window.clearTimeout(timer); }, [query]);
+  const viewport = useRef<HTMLDivElement>(null);
+  const refreshKey = `${props.refreshKey}:${refresh}`;
   return <nav className="project-files" aria-label="项目文件浏览">
-    <div className="files-toolbar"><label className="file-filter"><IconSearch size={15} /><input aria-label="搜索项目文件" placeholder="搜索文件名或路径…" value={query} onChange={event => setQuery(event.target.value)} /></label><button className="icon-button" aria-label="刷新项目文件" title="刷新目录" onClick={() => setRefresh(value => value + 1)}><IconRefresh size={16} /></button></div>
-    <div className="files-options"><label><input type="checkbox" checked={showIgnored} onChange={event => setShowIgnored(event.target.checked)} />显示忽略文件</label><span>工作区文件</span></div>
-    <div className="project-tree-scroll" aria-busy={query !== search}><Directory {...props} directory="" showIgnored={showIgnored} query={search} refreshKey={`${props.refreshKey}:${refresh}`} /></div>
+    <div className="files-toolbar"><label className="file-filter"><IconSearch size={15} /><input aria-label="搜索项目文件" placeholder={mode === 'content' ? '搜索文件内容…' : '搜索文件名或路径…'} maxLength={256} value={query} onChange={event => setQuery(event.target.value)} /></label><button className="icon-button" aria-label="刷新项目文件" title="刷新目录与搜索结果" onClick={() => setRefresh(value => value + 1)}><IconRefresh size={16} /></button></div>
+    <div className="files-search-mode" role="group" aria-label="文件搜索方式"><button aria-pressed={mode === 'name'} onClick={() => setMode('name')}>文件名 / 路径</button><button aria-pressed={mode === 'content'} onClick={() => setMode('content')}>文件内容</button></div>
+    <div className="files-options"><label><input type="checkbox" checked={showIgnored} onChange={event => setShowIgnored(event.target.checked)} />显示忽略文件</label><span>{mode === 'content' ? '搜索磁盘内容' : '工作区文件'}</span></div>
+    <div ref={viewport} className="project-tree-scroll">{query.trim() ? <ProjectSearchResults repository={props.repository} query={query} mode={mode} showIgnored={showIgnored} refreshKey={`${refreshKey}:${mode === 'content' ? props.revision ?? '' : ''}`} selected={props.selected} viewport={viewport} onOpen={props.onOpen} /> : <Directory {...props} directory="" showIgnored={showIgnored} refreshKey={refreshKey} />}</div>
   </nav>;
 }

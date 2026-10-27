@@ -23,6 +23,7 @@ import { FileTree } from './components/files/FileTree';
 import { FileEditorDialog } from './components/files/FileEditorDialog';
 import { useFileEditor } from './components/files/useFileEditor';
 import { confirmPendingChanges } from './services/pendingChanges';
+import type { FilePosition } from './services/project';
 import { APP_VERSION } from './services/appInfo';
 import { useAppUpdates } from './services/useAppUpdates';
 import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } from './services/git';
@@ -66,13 +67,13 @@ export default function App({ onReady }: { onReady: () => void }) {
   const { snapshot, hasRepository, busy, syncing, notify } = repo;
   const editor = useFileEditor(snapshot, repo.saveFile);
   const filesRefreshKey = JSON.stringify([snapshot.head, snapshot.files.map(file => file.path)]);
-  const openFile = (file: string) => {
+  const openFile = (file: string, position?: FilePosition) => {
     if (snapshot.files.some(entry => entry.path === file && entry.conflicted)) void (async () => {
       if (!await confirmPendingChanges()) return;
       await editor.close();
       setConflictFile(file);
     })();
-    else void editor.open(file);
+    else void editor.open(file, position);
   };
   const [theme, setTheme] = useState(readTheme);
   const [aiSettings, setAiSettings] = useState(readAiSettings);
@@ -406,7 +407,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       case 'stash': return <StashPanel key={snapshot.path} snapshot={snapshot} busy={busy} onSave={repo.saveStash} onAction={repo.actOnStash} />;
       case 'activity': return <ActivityPanel activities={repo.activities} />;
       case 'scripts': return <ScriptsPanel key={snapshot.path} snapshot={snapshot} notify={notify} />;
-      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} selected={editor.document?.file} onOpen={openFile} />;
+      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} revision={snapshot.revision} selected={editor.document?.file} onOpen={openFile} />;
     }
   };
 

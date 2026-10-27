@@ -6,6 +6,7 @@ import { tags } from '@lezer/highlight';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { createEditorSearchPanel } from './editorSearchPanel';
+import type { EditorDocument } from './useFileEditor';
 
 const highlighting = HighlightStyle.define([
   { tag: tags.keyword, class: 'editor-token-keyword' },
@@ -34,8 +35,9 @@ async function language(file: string): Promise<Extension> {
   }
 }
 
-export default function CodeEditor({ file, content, readOnly, onChange, onSave }: {
+export default function CodeEditor({ file, content, readOnly, target, onChange, onSave }: {
   file: string; content: string; readOnly: boolean; onChange: (value: string) => void; onSave: () => void;
+  target?: EditorDocument['target'];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -64,5 +66,14 @@ export default function CodeEditor({ file, content, readOnly, onChange, onSave }
     const editor = view.current;
     if (editor && editor.state.doc.toString() !== content) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: content }, annotations: Transaction.addToHistory.of(false) });
   }, [content]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || !target) return;
+    const line = editor.state.doc.line(Math.max(1, Math.min(editor.state.doc.lines, target.line)));
+    const from = Math.min(line.to, line.from + Math.max(0, target.column - 1));
+    const to = Math.min(line.to, from + Math.max(0, target.length));
+    editor.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
+    editor.focus();
+  }, [target]);
   return <div ref={host} className="project-code-editor" />;
 }
