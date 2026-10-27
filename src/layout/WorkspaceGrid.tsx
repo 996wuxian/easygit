@@ -9,6 +9,7 @@ import {
   IconGripVertical,
   IconPackage,
   IconTerminal2,
+  IconFolder,
 } from "@tabler/icons-react";
 import { panelSlotSpan, visiblePanelIds, type PanelId, type PanelLayout } from "./model";
 import "./layout.css";
@@ -21,6 +22,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   stash: "暂存架",
   activity: "操作记录",
   scripts: "项目脚本",
+  files: "项目文件",
 };
 
 const panelIcons = {
@@ -31,6 +33,7 @@ const panelIcons = {
   stash: IconPackage,
   activity: IconActivity,
   scripts: IconTerminal2,
+  files: IconFolder,
 };
 
 interface DragSession {

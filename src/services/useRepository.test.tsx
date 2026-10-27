@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyRepository, git, type RepositorySnapshot } from './git';
 import { useRepository } from './useRepository';
+import { project, type ProjectText } from './project';
+import { registerPendingChangesGuard } from './pendingChanges';
 
 const initial = { ...emptyRepository(), name: 'Alpha', path: 'X:/Projects/Alpha', branch: 'main' };
 const ready = () => {};
@@ -34,6 +36,51 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('文件编辑与仓库操作协调', () => {
+  const text: ProjectText = { content: 'saved\n', revision: 'saved-version', bom: false, lineEnding: 'lf', reason: null };
+
+  it('取消未保存确认时不打开项目、不切换分支', async () => {
+    const unregister = registerPendingChangesGuard(async () => false);
+    const checkout = vi.spyOn(git, 'checkout');
+    const openCount = vi.mocked(git.open).mock.calls.length;
+    try {
+      await act(async () => {
+        expect(await repository.open('X:/Projects/Other')).toBe(false);
+        expect(await repository.checkout('other')).toBe(false);
+      });
+      expect(git.open).toHaveBeenCalledTimes(openCount);
+      expect(checkout).not.toHaveBeenCalled();
+      expect(repository.snapshot.path).toBe(initial.path);
+    } finally { unregister(); }
+  });
+
+  it('保存文件更新工作区，并且不再次触发未保存确认', async () => {
+    const updated = { ...initial, revision: 'saved' };
+    const guard = vi.fn(async () => false);
+    const unregister = registerPendingChangesGuard(guard);
+    vi.spyOn(project, 'saveFile').mockResolvedValue({ file: text, snapshot: updated, refreshError: null });
+    try {
+      await act(async () => { expect(await repository.saveFile(initial.path, 'clean.ts', 'original', 'saved\n')).toEqual(text); });
+      expect(project.saveFile).toHaveBeenCalledWith(initial.path, 'clean.ts', 'original', 'saved\n');
+      expect(guard).not.toHaveBeenCalled();
+      expect(repository.snapshot).toBe(updated);
+      expect(repository.busy).toBe(false);
+    } finally { unregister(); }
+  });
+
+  it('磁盘保存成功但刷新失败时仍返回已保存版本，失败后释放操作锁', async () => {
+    vi.spyOn(project, 'saveFile').mockResolvedValueOnce({ file: text, snapshot: null, refreshError: 'Git unavailable' })
+      .mockRejectedValueOnce(new Error('external change'));
+    await act(async () => { expect(await repository.saveFile(initial.path, 'clean.ts', 'original', 'saved\n')).toEqual(text); });
+    expect(repository.notice?.message).toContain('文件已保存');
+    expect(repository.snapshot).toEqual(initial);
+    await act(async () => { await expect(repository.saveFile(initial.path, 'clean.ts', 'saved-version', 'next')).rejects.toThrow('external change'); });
+    expect(repository.busy).toBe(false);
+    await act(async () => { expect(await repository.saveFile('X:/Projects/Other', 'clean.ts', 'original', 'saved')).toBeNull(); });
+    expect(project.saveFile).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('仓库刷新协调', () => {
@@ -173,7 +220,7 @@ describe('仓库刷新协调', () => {
 });
 
 const remote = { ...initial, remote: 'https://example.invalid/alpha.git', head: 'local', hasUpstream: true };
-const updated = { ...remote, behind: 2, upstream: { name: 'origin/main', hash: 'remote-tip' }, branches: [{ name: 'origin/feature', current: false, remote: true, lastCommitDate: null }] };
+const updated = { ...remote, behind: 2, upstream: { name: 'origin/main', hash: 'remote-tip' }, branches: [{ name: 'origin/feature', current: false, remote: true, lastCommitDate: null, head: 'remote-tip' }] };
 async function openRemote(network: ReturnType<typeof deferred>) {
   vi.mocked(git.fetch).mockReturnValueOnce(network.promise);
   vi.mocked(git.open).mockResolvedValue(remote);

@@ -64,11 +64,48 @@ impl Drop for ProcessJob {
     }
 }
 
-fn read_pipe(mut pipe: impl Read + Send + 'static) -> Receiver<io::Result<Vec<u8>>> {
+const DEFAULT_STDOUT_LIMIT: usize = 64 * 1024 * 1024;
+const DEFAULT_STDERR_LIMIT: usize = 1024 * 1024;
+
+#[derive(Clone, Copy)]
+enum PipeLimit {
+    Reject(usize),
+    Prefix(usize),
+}
+
+fn read_pipe(
+    mut pipe: impl Read + Send + 'static,
+    limit: PipeLimit,
+) -> Receiver<io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        let result = pipe.read_to_end(&mut bytes).map(|_| bytes);
+        let result = match limit {
+            PipeLimit::Reject(limit) => {
+                // Read one extra byte to distinguish an exact fit from overflow.
+                pipe.take(limit.saturating_add(1) as u64)
+                    .read_to_end(&mut bytes)
+                    .and_then(|_| {
+                        if bytes.len() > limit {
+                            Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!("Git 输出超过允许的大小（{limit} 字节），已停止本次任务。操作可能已部分完成，请刷新仓库状态后再继续。"),
+                            ))
+                        } else {
+                            Ok(bytes)
+                        }
+                    })
+            }
+            PipeLimit::Prefix(limit) => {
+                // Preserve a prefix for callers that deliberately truncate,
+                // but drain the rest so the child can exit and report errors.
+                (&mut pipe)
+                    .take(limit as u64)
+                    .read_to_end(&mut bytes)
+                    .and_then(|_| io::copy(&mut pipe, &mut io::sink()))
+                    .map(|_| bytes)
+            }
+        };
         let _ = sender.send(result);
     });
     receiver
@@ -83,6 +120,11 @@ fn receive_pipe(receiver: &Receiver<io::Result<Vec<u8>>>) -> io::Result<Option<V
 }
 
 fn stop_process_tree(child: &mut Child) {
+    // Do not target a PID after the child has already exited: it may be reused.
+    // The Windows job handle still cleans up any remaining descendants on drop.
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
     // Terminate the tree before the root: Git may be waiting on SSH or a hook.
     // Only the PID returned by our own Command::spawn is ever targeted.
     #[cfg(windows)]
@@ -119,6 +161,45 @@ fn stop_process_tree(child: &mut Child) {
 /// Drain both output pipes concurrently and enforce a deadline for process and
 /// pipe completion. A descendant holding an inherited pipe cannot block the UI.
 pub fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<Output> {
+    output_with_limit(command, timeout, DEFAULT_STDOUT_LIMIT, DEFAULT_STDERR_LIMIT)
+}
+
+/// Bound both output streams independently while retaining the timeout and
+/// process-tree cleanup used for all Git commands.
+pub fn output_with_limit(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_limit: usize,
+    stderr_limit: usize,
+) -> io::Result<Output> {
+    output_with_policy(
+        command,
+        timeout,
+        PipeLimit::Reject(stdout_limit),
+        stderr_limit,
+    )
+}
+
+pub fn output_with_prefix(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_prefix: usize,
+    stderr_limit: usize,
+) -> io::Result<Output> {
+    output_with_policy(
+        command,
+        timeout,
+        PipeLimit::Prefix(stdout_prefix),
+        stderr_limit,
+    )
+}
+
+fn output_with_policy(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_limit: PipeLimit,
+    stderr_limit: usize,
+) -> io::Result<Output> {
     #[cfg(windows)]
     let process_job = ProcessJob::new()?;
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -128,8 +209,11 @@ pub fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Resu
         stop_process_tree(&mut child);
         return Err(error);
     }
-    let stdout_receiver = read_pipe(child.stdout.take().expect("stdout is piped"));
-    let stderr_receiver = read_pipe(child.stderr.take().expect("stderr is piped"));
+    let stdout_receiver = read_pipe(child.stdout.take().expect("stdout is piped"), stdout_limit);
+    let stderr_receiver = read_pipe(
+        child.stderr.take().expect("stderr is piped"),
+        PipeLimit::Reject(stderr_limit),
+    );
     let deadline = Instant::now() + timeout;
     let mut status = None;
     let mut stdout = None;
@@ -184,6 +268,14 @@ mod tests {
                 io::stdout().write_all(&vec![b'x'; 256 * 1024]).unwrap();
                 io::stderr().write_all(&vec![b'y'; 256 * 1024]).unwrap();
             }
+            Ok("stdout-overflow") => {
+                io::stdout().write_all(&vec![b'x'; 256 * 1024]).ok();
+                thread::sleep(Duration::from_secs(20));
+            }
+            Ok("stderr-overflow") => {
+                io::stderr().write_all(&vec![b'y'; 256 * 1024]).ok();
+                thread::sleep(Duration::from_secs(20));
+            }
             #[cfg(windows)]
             Ok("tree") => {
                 let mut child = fixture_command("leaf").spawn().unwrap();
@@ -232,6 +324,49 @@ mod tests {
         assert!(result.status.success());
         assert!(result.stdout.len() >= 256 * 1024);
         assert!(result.stderr.len() >= 256 * 1024);
+    }
+
+    #[test]
+    fn pipe_limit_accepts_exact_size_and_rejects_one_extra_byte() {
+        for (length, succeeds) in [(1024, true), (1025, false)] {
+            let receiver = read_pipe(io::Cursor::new(vec![b'x'; length]), PipeLimit::Reject(1024));
+            let result = receiver.recv().unwrap();
+            assert_eq!(result.is_ok(), succeeds);
+            if !succeeds {
+                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_mode_drains_large_output_and_preserves_process_status() {
+        let result = output_with_prefix(
+            &mut fixture_command("pipes"),
+            Duration::from_secs(5),
+            1024,
+            512 * 1024,
+        )
+        .unwrap();
+        assert!(result.status.success());
+        assert_eq!(result.stdout.len(), 1024);
+        assert!(result.stderr.len() >= 256 * 1024);
+    }
+
+    #[test]
+    fn oversized_stdout_and_stderr_stop_the_child_promptly() {
+        for mode in ["stdout-overflow", "stderr-overflow"] {
+            let started = Instant::now();
+            let error = output_with_limit(
+                &mut fixture_command(mode),
+                Duration::from_secs(10),
+                32 * 1024,
+                32 * 1024,
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{mode}");
+            assert!(error.to_string().contains("超过允许的大小"));
+            assert!(started.elapsed() < Duration::from_secs(5), "{mode}");
+        }
     }
 
     #[cfg(windows)]

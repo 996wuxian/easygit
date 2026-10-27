@@ -32,7 +32,7 @@ async function showSourceHistory() {
 }
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); localStorage.clear(); localStorage.setItem('esaygit.recent.v1', JSON.stringify([workspace]));
-  snapshot = { ...emptyRepository(), ...workspace, branch: 'main', head, revision: 'before', commits: [{ ...source, hash: head, shortHash: 'aaaaaaa', subject: '当前分支提交', local: true, remote: false }], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: source.date }, { name: 'origin/source', current: false, remote: true, lastCommitDate: source.date }] };
+  snapshot = { ...emptyRepository(), ...workspace, branch: 'main', head, revision: 'before', commits: [{ ...source, hash: head, shortHash: 'aaaaaaa', subject: '当前分支提交', local: true, remote: false }], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: source.date, head }, { name: 'origin/source', current: false, remote: true, lastCommitDate: source.date, head: source.hash }] };
   vi.spyOn(git, 'open').mockImplementation(async () => snapshot);
   vi.spyOn(git, 'stashes').mockResolvedValue([]);
   vi.spyOn(project, 'scripts').mockResolvedValue({ packageFound: false, manager: 'npm', scripts: [] });

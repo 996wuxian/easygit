@@ -13,7 +13,7 @@ const hash = 'a'.repeat(40);
 const commit: GitCommit = { hash, shortHash: 'aaaaaaa', subject: '更新需求', author: 'Developer', date: '2026-10-22T00:00:00Z', parents: ['b'.repeat(40)], refs: [], local: true, remote: true };
 const snapshot: RepositorySnapshot = {
   ...emptyRepository(), path: 'X:/QA/project', name: 'QA', branch: 'main', head: hash, revision: 'version-1',
-  branches: [{ name: 'main', current: true, remote: false, lastCommitDate: null }, { name: 'origin/dev', current: false, remote: true, lastCommitDate: null }],
+  branches: [{ name: 'main', current: true, remote: false, lastCommitDate: null, head: 'main' }, { name: 'origin/dev', current: false, remote: true, lastCommitDate: null, head: 'dev' }],
   commits: Array.from({ length: 10 }, (_, index) => ({ ...commit, hash: index.toString(16).padStart(40, '0'), subject: `提交 ${index}` })),
 };
 const stash = { hash, selector: 'stash@{0}', message: '保存需求', date: commit.date };

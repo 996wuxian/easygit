@@ -35,6 +35,7 @@ beforeEach(async () => {
   vi.spyOn(git, 'open').mockResolvedValue({ ...emptyRepository(), ...workspace, branch: 'main', head: commits[0].hash, commits });
   vi.spyOn(git, 'stashes').mockResolvedValue([]);
   vi.spyOn(project, 'scripts').mockResolvedValue({ packageFound: false, manager: 'npm', scripts: [] });
+  vi.spyOn(project, 'files').mockResolvedValue({ entries: [], truncated: false });
   vi.spyOn(git, 'compareCommits').mockResolvedValue(result());
   vi.spyOn(git, 'comparisonDiff').mockResolvedValue(patch('compared content'));
   vi.spyOn(git, 'checkout');

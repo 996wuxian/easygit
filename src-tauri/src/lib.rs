@@ -69,6 +69,31 @@ async fn read_project_scripts(path: String) -> Result<project::ProjectScripts, S
 }
 
 #[tauri::command]
+async fn list_project_files(
+    path: String,
+    directory: String,
+    show_ignored: bool,
+    query: String,
+) -> Result<git::ProjectListing, String> {
+    blocking(move || git::list_project_files(&path, &directory, show_ignored, &query)).await
+}
+
+#[tauri::command]
+async fn read_project_file(path: String, file: String) -> Result<git::ProjectText, String> {
+    blocking(move || git::read_project_file(&path, &file)).await
+}
+
+#[tauri::command]
+async fn save_project_file(
+    path: String,
+    file: String,
+    revision: String,
+    content: String,
+) -> Result<git::SavedProjectText, String> {
+    blocking(move || git::save_project_file(&path, &file, &revision, &content)).await
+}
+
+#[tauri::command]
 async fn run_project_script(
     path: String,
     name: String,
@@ -431,6 +456,9 @@ pub fn run() {
             pick_repository_directory,
             open_repository_directory,
             read_project_scripts,
+            list_project_files,
+            read_project_file,
+            save_project_file,
             run_project_script,
             read_diff,
             read_file_comparison,

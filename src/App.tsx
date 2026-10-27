@@ -18,6 +18,10 @@ import { RemoveWorkspaceDialog } from './components/RemoveWorkspaceDialog';
 import { DataStorageDialog } from './components/DataStorageDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { ProjectNotesDialog } from './components/ProjectNotesDialog';
+import { FileTree } from './components/files/FileTree';
+import { FileEditorDialog } from './components/files/FileEditorDialog';
+import { useFileEditor } from './components/files/useFileEditor';
+import { confirmPendingChanges } from './services/pendingChanges';
 import { APP_VERSION } from './services/appInfo';
 import { useAppUpdates } from './services/useAppUpdates';
 import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } from './services/git';
@@ -59,6 +63,16 @@ export default function App({ onReady }: { onReady: () => void }) {
   const updates = useAppUpdates();
   const panels = usePanelLayout();
   const { snapshot, hasRepository, busy, syncing, notify } = repo;
+  const editor = useFileEditor(snapshot, repo.saveFile);
+  const filesRefreshKey = JSON.stringify([snapshot.head, snapshot.files.map(file => file.path)]);
+  const openFile = (file: string) => {
+    if (snapshot.files.some(entry => entry.path === file && entry.conflicted)) void (async () => {
+      if (!await confirmPendingChanges()) return;
+      await editor.close();
+      setConflictFile(file);
+    })();
+    else void editor.open(file);
+  };
   const [theme, setTheme] = useState(readTheme);
   const [aiSettings, setAiSettings] = useState(readAiSettings);
   const [generatingCommitMessage, setGeneratingCommitMessage] = useState(false);
@@ -235,7 +249,8 @@ export default function App({ onReady }: { onReady: () => void }) {
     if (removal?.returnToOpen) setModal('open');
     setRemoval(null);
   }
-  function confirmRemoval() {
+  async function confirmRemoval() {
+    if (removal?.workspace.path === snapshot.path && !await confirmPendingChanges()) return;
     if (!removal || !repo.removeWorkspace(removal.workspace)) return;
     setCommitDrafts(current => {
       const next = { ...current };
@@ -332,7 +347,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       notify(`请在自定义布局中勾选「${PANEL_TITLES[id]}」面板。`);
       return;
     }
-    setActiveNav(id === 'commits' ? 'commits' : id === 'branches' ? 'branches' : id === 'activity' ? 'activity' : 'workspace');
+    setActiveNav(['commits', 'branches', 'activity', 'files'].includes(id) ? id : 'workspace');
     window.setTimeout(() => {
       const node = document.querySelector<HTMLElement>(`[data-eg-panel="${id}"]`);
       node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -343,18 +358,18 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
-      if (removal || discardConfirmation || conflictFile || blockDiscard) {
+      if (editor.visible || removal || discardConfirmation || conflictFile || blockDiscard) {
         if ((event.ctrlKey || event.metaKey) && ['k', 'o', 'r'].includes(event.key.toLowerCase())) event.preventDefault();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setModal(current => current === 'commands' ? null : 'commands'); setQuery(''); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); setModal('open'); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') { event.preventDefault(); void repo.refresh(); }
-      if (event.key === '/' && !modal && !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); document.querySelector<HTMLInputElement>('[aria-label="筛选变更文件"]')?.focus(); }
+      if (event.key === '/' && !modal && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, [contenteditable="true"]'))) { event.preventDefault(); document.querySelector<HTMLInputElement>('[aria-label="筛选变更文件"]')?.focus(); }
     };
     window.addEventListener('keydown', shortcuts);
     return () => window.removeEventListener('keydown', shortcuts);
-  }, [modal, removal, discardConfirmation, conflictFile, blockDiscard, repo.refresh]);
+  }, [modal, editor.visible, removal, discardConfirmation, conflictFile, blockDiscard, repo.refresh]);
 
   const actions = useMemo(() => [
     { id: 'open', icon: IconFolderOpen, title: '打开本地仓库', detail: '输入 Git 项目目录', shortcut: 'Ctrl O', run: () => setModal('open') },
@@ -362,7 +377,8 @@ export default function App({ onReady }: { onReady: () => void }) {
     { id: 'layout', icon: IconLayoutGrid, title: '自定义工作台', detail: '显示、隐藏和重新排列面板', shortcut: '', run: () => setModal('layout') },
     { id: 'theme', icon: theme === 'light' ? IconMoon : IconSun, title: theme === 'light' ? '切换深色主题' : '切换浅色主题', detail: '界面外观', shortcut: '', run: () => { setTheme(t => t === 'light' ? 'dark' : 'light'); closeModal(); } },
     { id: 'branches', icon: IconGitBranch, title: '切换分支', detail: snapshot.branch, shortcut: '', run: () => setModal('branches') },
-  ].filter(action => hasRepository || !['refresh', 'branches'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal]);
+    { id: 'files', icon: IconFolder, title: '浏览项目文件', detail: '查看目录和编辑工作区文件', shortcut: '', run: () => { closeModal(); focusPanel('files'); } },
+  ].filter(action => hasRepository || !['refresh', 'branches', 'files'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal, panels.layout]);
 
   async function openPath(value = path) {
     if (await repo.open(value)) {
@@ -383,7 +399,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const renderPanel = (id: PanelId) => {
     switch (id) {
       case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} busy={busy} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onResolveConflict={setConflictFile} onCommit={repo.commit} />;
-      case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} busy={busy} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope, true)} onResolveConflict={setConflictFile} onDiscardBlock={requestBlockDiscard} />;
+      case 'diff': return <DiffPanel onEditFile={openFile} snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} busy={busy} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope, true)} onResolveConflict={setConflictFile} onDiscardBlock={requestBlockDiscard} />;
       case 'branches': return <BranchesPanel onBranchAction={repo.manageBranch} notify={repo.notify} searchQuery={branchQuery} snapshot={snapshot} busy={busy} mergeDisabled={mergeDisabled} onCompare={() => setComparingBranches(true)} onMergeRequest={requestBranchMerge} onCheckout={(name, remote) => { void repo.checkout(name, remote); }} />;
       case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={commit => { setCommitDetailStatus(null); setSelectedCommit(commit); }} busy={busy} notify={notify} onCherryPick={(commit, head, branch) => repo.cherryPick(snapshot.path, commit.hash, head, branch)} onAction={async (commit, head, branch, action) => {
         const path = snapshot.path;
@@ -395,6 +411,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       case 'stash': return <StashPanel key={snapshot.path} snapshot={snapshot} busy={busy} onSave={repo.saveStash} onAction={repo.actOnStash} />;
       case 'activity': return <ActivityPanel activities={repo.activities} />;
       case 'scripts': return <ScriptsPanel key={snapshot.path} snapshot={snapshot} notify={notify} />;
+      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} selected={editor.document?.file} onOpen={openFile} />;
     }
   };
 
@@ -419,6 +436,7 @@ export default function App({ onReady }: { onReady: () => void }) {
         <button title="工作台" aria-label="工作台" aria-current={activeNav === 'workspace' ? 'page' : undefined} className={activeNav === 'workspace' ? 'active' : ''} onClick={() => { setActiveNav('workspace'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><IconLayoutDashboard size={20} /></button>
         <button title="提交历史" aria-label="提交历史" aria-current={activeNav === 'commits' ? 'page' : undefined} className={activeNav === 'commits' ? 'active' : ''} onClick={() => focusPanel('commits')}><IconHistory size={21} /></button>
         <button title="分支管理" aria-label="分支管理" aria-current={activeNav === 'branches' ? 'page' : undefined} className={activeNav === 'branches' ? 'active' : ''} onClick={() => focusPanel('branches')}><IconGitBranch size={20} /></button>
+        <button title="项目文件" aria-label="项目文件" aria-current={activeNav === 'files' ? 'page' : undefined} className={activeNav === 'files' ? 'active' : ''} onClick={() => focusPanel('files')}><IconFolder size={20} /></button>
         <button title="操作记录" aria-label="操作记录" aria-current={activeNav === 'activity' ? 'page' : undefined} className={activeNav === 'activity' ? 'active' : ''} onClick={() => focusPanel('activity')}><IconTerminal2 size={20} /></button>
       </nav>
       <span className="rail-divider" />
@@ -472,7 +490,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'create-branch' && <Dialog title="创建本地分支" onClose={closeModal} className="create-branch-dialog"><form onSubmit={event => { event.preventDefault(); const name = branchName.trim(); if (!name) return; void repo.createBranch(name).then(success => { if (success) { setBranchName(''); closeModal(); } }); }}><p className="dialog-description">从 <code>{snapshot.branch || '当前提交'}</code> 创建并切换到新分支。</p><label className="field-label" htmlFor="new-branch-name">新分支名称</label><input id="new-branch-name" className="text-field mono" value={branchName} onChange={event => setBranchName(event.target.value)} placeholder="例如 feature/login" autoFocus spellCheck={false} /><p className="field-help">输入新的本地分支名，不能与现有分支重名。</p><div className="dialog-action-row"><button className="text-button" type="button" disabled={busy} onClick={closeModal}>取消</button><button className="primary-button" type="submit" disabled={!branchName.trim() || busy}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconGitBranch size={16} />}创建并切换</button></div></form></Dialog>}
 
-    {modal === 'layout' && <Dialog title="自定义布局" onClose={closeModal}><p className="dialog-description">选择你需要的面板。拖动面板标题栏上的手柄，即可交换位置；布局会自动保存在这台设备上。</p><div className="layout-options">{PANEL_IDS.map(id => { const Icon = panelIcons[id]; const visible = !panels.layout.hidden.includes(id); return <label key={id} className={visible ? 'checked' : ''}><span className="layout-option-icon"><Icon size={20} stroke={1.5} /></span><span><strong>{PANEL_TITLES[id]}</strong><small>{{ changes: '查看文件更改与创建提交', diff: '逐行查看代码差异', branches: '切换、合并与对比分支', commits: '搜索与翻页查看提交', stash: '保存、预览与恢复未完成更改', activity: '跟踪操作结果与错误', scripts: '读取 package.json 脚本并在终端运行' }[id]}</small></span><input type="checkbox" checked={visible} disabled={visible && panels.visiblePanels.length === 1} onChange={() => panels.togglePanel(id)} /></label>; })}</div><div className="dialog-action-row"><button className="text-button" onClick={() => { panels.resetLayout(); notify('已恢复默认布局'); }}><IconRefresh size={15} />恢复默认布局</button><button className="primary-button" onClick={closeModal}><IconCheck size={16} />完成</button></div></Dialog>}
+    {modal === 'layout' && <Dialog title="自定义布局" onClose={closeModal}><p className="dialog-description">选择你需要的面板。拖动面板标题栏上的手柄，即可交换位置；布局会自动保存在这台设备上。</p><div className="layout-options">{PANEL_IDS.map(id => { const Icon = panelIcons[id]; const visible = !panels.layout.hidden.includes(id); return <label key={id} className={visible ? 'checked' : ''}><span className="layout-option-icon"><Icon size={20} stroke={1.5} /></span><span><strong>{PANEL_TITLES[id]}</strong><small>{{ changes: '查看文件更改与创建提交', diff: '逐行查看代码差异', branches: '切换、合并与对比分支', commits: '搜索与翻页查看提交', stash: '保存、预览与恢复未完成更改', activity: '跟踪操作结果与错误', scripts: '读取 package.json 脚本并在终端运行', files: '浏览项目目录、查看内容并编辑文件' }[id]}</small></span><input type="checkbox" checked={visible} disabled={visible && panels.visiblePanels.length === 1} onChange={() => panels.togglePanel(id)} /></label>; })}</div><div className="dialog-action-row"><button className="text-button" onClick={() => { panels.resetLayout(); notify('已恢复默认布局'); }}><IconRefresh size={15} />恢复默认布局</button><button className="primary-button" onClick={closeModal}><IconCheck size={16} />完成</button></div></Dialog>}
 
     {modal === 'commands' && <Dialog title="命令面板" className="command-dialog" onClose={closeModal}><label className="command-search"><IconSearch size={21} /><input aria-label="搜索命令" placeholder="搜索命令…" value={query} onChange={e => setQuery(e.target.value)} autoFocus onKeyDown={e => { if (e.key === 'Enter') actions.find(action => `${action.title}${action.detail}`.includes(query))?.run(); }} /><kbd>ESC</kbd></label><div className="dialog-section-label">快捷操作</div><div className="command-list">{actions.filter(action => `${action.title}${action.detail}`.includes(query)).map(action => <button key={action.id} onClick={action.run}><span className="command-icon"><action.icon size={19} /></span><span><strong>{action.title}</strong><small>{action.detail}</small></span>{action.shortcut && <kbd>{action.shortcut}</kbd>}<IconChevronRight size={14} /></button>)}{!actions.some(action => `${action.title}${action.detail}`.includes(query)) && <div className="empty-inline">没有找到对应命令，试试“布局”或“分支”。</div>}</div><div className="command-footer"><span><kbd>↵</kbd> 执行首个结果</span><span>Ctrl K 打开 / 关闭</span></div></Dialog>}
 
@@ -503,6 +521,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
     {modal === 'about' && <AboutDialog updates={updates} onClose={closeModal} />}
     {modal === 'project-notes' && hasRepository && <ProjectNotesDialog key={snapshot.path} path={snapshot.path} name={snapshot.name} onClose={closeModal} />}
+    {editor.visible && hasRepository && createPortal(<FileEditorDialog editor={editor} snapshot={snapshot} busy={busy} refreshKey={filesRefreshKey} onOpen={openFile} onResolveConflict={openFile} />, document.body)}
 
     {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.sourceRemote}:${mergeRequest.source}:${mergeRequest.targetRemote}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} sourceRemote={mergeRequest.sourceRemote} target={mergeRequest.target} targetRemote={mergeRequest.targetRemote} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
 

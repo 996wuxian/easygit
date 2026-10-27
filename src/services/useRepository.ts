@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type BranchRequest, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
 import { formatFetchError, formatPullError, gitErrorMessage } from './gitErrors';
+import { project, type ProjectText } from './project';
+import { confirmPendingChanges } from './pendingChanges';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean; details?: string }
@@ -68,6 +70,7 @@ export function useRepository(onReady: () => void) {
 
   const open = useCallback(async (path: string) => {
     if (busyRef.current) return false;
+    if (!await confirmPendingChanges() || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     const token = ++generation.current;
@@ -224,6 +227,8 @@ export function useRepository(onReady: () => void) {
 
   const run = useCallback(async (label: string | ((snapshot: RepositorySnapshot) => { message: string; error?: boolean }), operation: (path: string) => Promise<RepositorySnapshot>, formatError: (error: unknown) => string = String) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
+    const expectedPath = snapshotRef.current.path;
+    if (!await confirmPendingChanges() || busyRef.current || snapshotRef.current.path !== expectedPath) return false;
     busyRef.current = true;
     setBusy(true);
     const current = snapshotRef.current;
@@ -239,6 +244,20 @@ export function useRepository(onReady: () => void) {
     } catch (error) { notify(formatError(error), true); return false; }
     finally { busyRef.current = false; setBusy(false); }
   }, [notify]);
+
+  const saveFile = async (expectedPath: string, file: string, revision: string, content: string): Promise<ProjectText | null> => {
+    if (busyRef.current || snapshotRef.current.path !== expectedPath) return null;
+    busyRef.current = true;
+    setBusy(true);
+    const token = ++generation.current;
+    try {
+      const result = await project.saveFile(expectedPath, file, revision, content);
+      if (token !== generation.current) return null;
+      if (result.snapshot) { snapshotRef.current = result.snapshot; setSnapshot(result.snapshot); }
+      notify(result.refreshError ? `文件已保存，Git 状态刷新失败：${result.refreshError}` : `已保存 ${file}`, Boolean(result.refreshError));
+      return result.file;
+    } finally { busyRef.current = false; setBusy(false); }
+  };
 
   const runOutcome = async (label: string, action: (path: string) => Promise<PullResult>) => {
     let outcome: PullResult | undefined;
@@ -296,6 +315,8 @@ export function useRepository(onReady: () => void) {
   const push = () => run('更改已推送到远程仓库', path => git.push(path));
   const merge = useCallback(async (preview: MergePreview) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
+    const expectedPath = snapshotRef.current.path;
+    if (!await confirmPendingChanges() || busyRef.current || snapshotRef.current.path !== expectedPath) return false;
     busyRef.current = true;
     setBusy(true);
     const token = ++generation.current;
@@ -339,5 +360,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, syncing: Boolean(remoteSync), notice, setNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

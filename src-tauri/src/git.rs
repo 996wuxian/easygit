@@ -8,6 +8,11 @@ mod comparison;
 mod diff_blocks;
 pub use diff_blocks::{discard_diff_block, DiffBlock};
 mod conflicts;
+mod files;
+pub use files::{
+    list_project_files, read_project_file, save_project_file, ProjectListing, ProjectText,
+    SavedProjectText,
+};
 #[cfg(test)]
 mod conflicts_tests;
 pub use commit_actions::{act_on_commit, CommitAction};
@@ -71,6 +76,7 @@ pub struct GitBranch {
     pub current: bool,
     pub remote: bool,
     pub last_commit_date: Option<String>,
+    pub head: Option<String>,
 }
 
 #[derive(Debug, Hash, Serialize)]
@@ -158,20 +164,45 @@ fn command(root: Option<&Path>) -> Command {
     command
 }
 
-fn output(root: Option<&Path>, args: &[&str]) -> Result<Output, String> {
+enum OutputMode {
+    Default,
+    Bounded(usize),
+    Prefix(usize),
+}
+
+const DIFF_LIMIT: usize = 2 * 1024 * 1024;
+const STDERR_LIMIT: usize = 1024 * 1024;
+
+fn output_mode(root: Option<&Path>, args: &[&str], mode: OutputMode) -> Result<Output, String> {
     #[cfg(test)]
     GIT_COMMAND_COUNT.with(|count| count.set(count.get() + 1));
     let mut command = command(root);
     command.args(args);
-    crate::process::output_with_timeout(&mut command, Duration::from_secs(60)).map_err(|error| {
+    let timeout = Duration::from_secs(60);
+    let result = match mode {
+        OutputMode::Default => crate::process::output_with_timeout(&mut command, timeout),
+        OutputMode::Bounded(limit) => {
+            crate::process::output_with_limit(&mut command, timeout, limit, STDERR_LIMIT)
+        }
+        OutputMode::Prefix(limit) => {
+            crate::process::output_with_prefix(&mut command, timeout, limit, STDERR_LIMIT)
+        }
+    };
+    result.map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             "未找到 Git，请安装 Git 并确认 git 已加入 PATH。".to_owned()
         } else if error.kind() == std::io::ErrorKind::TimedOut {
             format!("{error}（等待上限 60 秒）")
+        } else if error.kind() == std::io::ErrorKind::InvalidData {
+            error.to_string()
         } else {
             format!("无法启动 Git：{error}")
         }
     })
+}
+
+fn output(root: Option<&Path>, args: &[&str]) -> Result<Output, String> {
+    output_mode(root, args, OutputMode::Default)
 }
 
 fn error_text(output: &Output) -> String {
@@ -185,6 +216,15 @@ fn error_text(output: &Output) -> String {
 
 fn run(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = output(Some(root), args)?;
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(error_text(&output))
+    }
+}
+
+fn run_mode(root: &Path, args: &[&str], mode: OutputMode) -> Result<Vec<u8>, String> {
+    let output = output_mode(Some(root), args, mode)?;
     if output.status.success() {
         Ok(output.stdout)
     } else {
@@ -363,6 +403,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 current: fields[1] == "*",
                 remote: fields[2].starts_with("refs/remotes/"),
                 last_commit_date: (!fields[3].is_empty()).then(|| fields[3].to_owned()),
+                head: Some(fields[4].to_owned()),
             })
         })
         .collect();
@@ -374,6 +415,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 current: true,
                 remote: false,
                 last_commit_date: None,
+                head: None,
             },
         );
     }
@@ -547,7 +589,7 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
         let selected = status.iter().find(|entry| entry.path == file);
         if !staged && selected.is_some_and(|entry| entry.untracked) {
             let null_file = if cfg!(windows) { "NUL" } else { "/dev/null" };
-            let result = output(
+            let result = output_mode(
                 Some(root),
                 &[
                     "diff",
@@ -561,6 +603,7 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
                     null_file,
                     file,
                 ],
+                OutputMode::Bounded(DIFF_LIMIT),
             )?;
             if result.status.success() || result.status.code() == Some(1) {
                 return Ok(String::from_utf8_lossy(&result.stdout).into_owned());
@@ -582,7 +625,7 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
         if let Some(old_path) = selected.and_then(|entry| entry.old_path.as_deref()) {
             args.push(old_path);
         }
-        let bytes = run(root, &args)?;
+        let bytes = run_mode(root, &args, OutputMode::Bounded(DIFF_LIMIT))?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     })
 }
@@ -590,7 +633,10 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
 pub fn read_staged_diff(path: &str) -> Result<String, String> {
     const MAX_DIFF_CHARS: usize = 30_000;
     with_repository(path, |root| {
-        let bytes = run(
+        // UTF-8 uses at most four bytes per scalar. Retain enough for one
+        // extra character so conversion can detect content beyond 30,000;
+        // the rest is drained without being buffered by the process reader.
+        let bytes = run_mode(
             root,
             &[
                 "diff",
@@ -600,6 +646,7 @@ pub fn read_staged_diff(path: &str) -> Result<String, String> {
                 "--no-textconv",
                 "--unified=3",
             ],
+            OutputMode::Prefix((MAX_DIFF_CHARS + 1) * 4),
         )?;
         let diff = String::from_utf8_lossy(&bytes).into_owned();
         if diff.chars().count() <= MAX_DIFF_CHARS {
@@ -949,6 +996,28 @@ mod tests {
         assert!(diff.contains("+staged content"));
         assert!(!diff.contains("unstaged content"));
         assert!(!diff.contains("unstaged.txt"));
+    }
+
+    #[test]
+    fn large_diffs_are_bounded_but_ai_diff_keeps_a_prefix() {
+        let directory = repo();
+        let root = directory.path();
+        let path = root.to_str().unwrap();
+        let filename = "large.txt";
+        // Multiple lines ensure Git treats this as text and produces a large diff.
+        fs::write(root.join(filename), "😀 text\n".repeat(300_000)).unwrap();
+
+        let error = read_diff(path, filename, false).unwrap_err();
+        assert!(error.contains("输出超过"), "{error}");
+
+        run(root, &["add", "--", filename]).unwrap();
+        let error = read_diff(path, filename, true).unwrap_err();
+        assert!(error.contains("输出超过"), "{error}");
+
+        let ai_diff = read_staged_diff(path).unwrap();
+        assert!(ai_diff.contains("+😀 text"));
+        assert!(ai_diff.ends_with("[差异内容过长，后续部分已省略]"));
+        assert!(ai_diff.chars().count() < 30_100);
     }
 
     #[test]

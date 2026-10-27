@@ -29,8 +29,12 @@ button.branch-row[aria-disabled="true"] { cursor: default; }
 .branch-search-popover { position: fixed; z-index: 1100; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text); box-shadow: 0 8px 24px #00000018; }
 .branch-search-heading { display: flex; align-items: center; gap: 8px; padding: 10px; }
 .branch-search-input { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; color: var(--text-muted); }
-.branch-search-input > input { width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-soft); color: var(--text); font-size: 12px; }
-.branch-search-input > input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.branch-search-field { position: relative; flex: 1; min-width: 0; }
+.branch-search-field > input { width: 100%; min-width: 0; padding: 6px 32px 6px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-soft); color: var(--text); font-size: 12px; }
+.branch-search-field > input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.branch-search-clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.branch-search-clear:hover { color: var(--text); background: var(--bg-card-hover); }
+.branch-search-clear:focus-visible { outline: 2px solid var(--text-muted); outline-offset: -2px; }
 .branch-action-target { margin: 0 0 16px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .branch-action-target > code { color: var(--text); }
 .branch-action-dialog .field-label > .text-field { display: block; margin-top: 8px; }

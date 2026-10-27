@@ -13,13 +13,16 @@ export function useCommitHistory(snapshot: RepositorySnapshot) {
   const [page, setPage] = useState<{ context: string; offset: number; value: HistoryPage } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const context = JSON.stringify([snapshot.path, snapshot.head, snapshot.branch, snapshot.upstream?.hash, scope, keyword]);
-  const previousContext = useRef(context);
-  const key = useRef<string | null>(null);
-  const paged = expanded || scope !== 'current' || Boolean(keyword);
   const reference = snapshot.branches.find(branch => branchKey(branch) === scope);
   const referenceName = reference?.name;
   const referenceRemote = reference?.remote;
+  const referenceHead = reference?.head;
+  const referenceExists = Boolean(reference);
+  const missingReference = scope !== 'current' && !reference;
+  const context = JSON.stringify([snapshot.path, snapshot.head, snapshot.branch, snapshot.upstream?.hash, scope, referenceHead, missingReference, keyword]);
+  const previousContext = useRef(context);
+  const key = useRef<string | null>(null);
+  const paged = expanded || scope !== 'current' || Boolean(keyword);
   useEffect(() => {
     const timer = window.setTimeout(() => setKeyword(search.trim()), 250);
     return () => window.clearTimeout(timer);
@@ -31,12 +34,21 @@ export function useCommitHistory(snapshot: RepositorySnapshot) {
       if (offset !== 0) { setOffset(0); return; }
     }
     if (!paged || !snapshot.path) { setPage(null); setLoading(false); setError(null); return; }
+    if (missingReference) {
+      setPage(null); setLoading(false); setError('所选历史分支已不存在，请重新选择分支。');
+      return;
+    }
+    if (referenceExists && !referenceHead) {
+      setPage({ context, offset: 0, value: { commits: [], nextOffset: null, key: '' } });
+      setLoading(false); setError(null);
+      return;
+    }
     let active = true; setLoading(true); setError(null);
     void git.history(snapshot.path, { reference: referenceName ? { name: referenceName, remote: referenceRemote ?? false } : null, query: keyword, offset, expectedKey: offset ? key.current : null }).then(value => {
       if (active) { key.current = value.key; setPage({ context, offset, value }); }
     }).catch(reason => { if (active) setError(String(reason)); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [context, offset, paged, reload, snapshot.path, keyword, referenceName, referenceRemote]);
+  }, [context, offset, paged, reload, snapshot.path, keyword, referenceName, referenceRemote, referenceExists, referenceHead, missingReference]);
   const current = page?.context === context && page.offset === offset ? page.value : null;
   return { scope, setScope, search, setSearch, offset, loading, error, paged,
     commits: paged ? current?.commits ?? [] : snapshot.commits,

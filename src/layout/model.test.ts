@@ -39,12 +39,14 @@ describe("panel movement", () => {
   it("adds the scripts panel to saved layouts and allows moving and hiding it", () => {
     const oldOrder = ["changes", "diff", "branches", "commits", "stash", "activity"];
     const restored = normalizePanelLayout({ version: 1, order: oldOrder, hidden: ["activity"] });
-    expect(restored.order).toEqual([...oldOrder, "scripts"]);
+    expect(restored.order).toEqual([...oldOrder, "scripts", "files"]);
     expect(visiblePanelIds(restored)).toContain("scripts");
     const moved = movePanelInLayout(restored, "scripts", "changes");
     expect(moved.order[0]).toBe("scripts");
     expect(visiblePanelIds(togglePanelInLayout(moved, "scripts"))).not.toContain("scripts");
     expect(defaultPanelLayout().hidden).not.toContain("scripts");
+    expect(visiblePanelIds(restored)).toContain("files");
+    expect(visiblePanelIds(togglePanelInLayout(restored, "files"))).not.toContain("files");
   });
   it("keeps hidden modules and all visible modules across repeated moves", () => {
     let layout = defaultPanelLayout();

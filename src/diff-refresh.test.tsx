@@ -76,7 +76,7 @@ describe('代码差异刷新', () => {
     const date = new Date().toISOString();
     vi.mocked(git.open).mockImplementation(async () => ({
       ...emptyRepository(), ...alpha, branch: 'main', head: 'abc123', files: structuredClone(files),
-      branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date }, { name: 'feature', current: false, remote: false, lastCommitDate: date }],
+      branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date, head: 'main' }, { name: 'feature', current: false, remote: false, lastCommitDate: date, head: 'feature' }],
       commits: [{ hash: 'abc123', shortHash: 'abc123', subject: 'Initial commit', author: 'Developer', date, parents: [], refs: [{ name: 'main', remote: false }], local: true, remote: false }],
     }));
     await openRepository();

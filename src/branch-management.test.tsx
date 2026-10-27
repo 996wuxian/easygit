@@ -14,9 +14,9 @@ function initial(): RepositorySnapshot {
   const date = new Date().toISOString();
   return { ...emptyRepository(), ...workspace, branch: 'main', head: hash,
     branches: [
-      { name: 'main', current: true, remote: false, lastCommitDate: date },
-      { name: 'topic', current: false, remote: false, lastCommitDate: date },
-      { name: 'origin/main', current: false, remote: true, lastCommitDate: date },
+      { name: 'main', current: true, remote: false, lastCommitDate: date, head: 'main' },
+      { name: 'topic', current: false, remote: false, lastCommitDate: date, head: 'topic' },
+      { name: 'origin/main', current: false, remote: true, lastCommitDate: date, head: 'remote' },
     ] };
 }
 let host: HTMLDivElement;

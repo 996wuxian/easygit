@@ -8,7 +8,7 @@ export interface GitFile {
   untracked: boolean;
   conflicted: boolean;
 }
-export interface GitBranch { name: string; current: boolean; remote: boolean; lastCommitDate: string | null }
+export interface GitBranch { name: string; current: boolean; remote: boolean; lastCommitDate: string | null; head: string | null }
 export interface BranchInfo { head: string; upstream: string | null }
 export type BranchAction = { kind: 'rename'; name: string } | { kind: 'delete' } | { kind: 'upstream'; upstream: string } | { kind: 'unset-upstream' };
 export interface BranchRequest {

@@ -2,6 +2,49 @@ use super::*;
 use std::time::Instant;
 
 #[test]
+fn revision_tracks_non_current_branch_tip_even_with_same_commit_date() {
+    let directory = tests::repo();
+    let root = directory.path();
+    let path = root.to_str().unwrap();
+    let unborn = open_repository(path).unwrap();
+    assert!(unborn.branches[0].head.is_none());
+    run(root, &["commit", "--allow-empty", "-m", "main"]).unwrap();
+    let tree = run_text(root, &["rev-parse", "HEAD^{tree}"]).unwrap();
+    let make_tip = |message| {
+        let mut process = command(Some(root));
+        process
+            .args(["commit-tree", &tree, "-m", message])
+            .env("GIT_AUTHOR_DATE", "2025-01-15T10:00:00+08:00")
+            .env("GIT_COMMITTER_DATE", "2025-01-15T10:00:00+08:00");
+        let result =
+            crate::process::output_with_timeout(&mut process, Duration::from_secs(30)).unwrap();
+        assert!(result.status.success(), "{}", error_text(&result));
+        String::from_utf8(result.stdout).unwrap().trim().to_owned()
+    };
+    let old = make_tip("old remote");
+    let new = make_tip("new remote");
+    run(root, &["update-ref", "refs/remotes/origin/feature", &old]).unwrap();
+    let before = open_repository(path).unwrap();
+    run(root, &["update-ref", "refs/remotes/origin/feature", &new]).unwrap();
+    let after = open_repository(path).unwrap();
+    fn branch(state: &RepositorySnapshot) -> &GitBranch {
+        state
+            .branches
+            .iter()
+            .find(|branch| branch.name == "origin/feature")
+            .unwrap()
+    }
+    assert_eq!(
+        branch(&before).last_commit_date,
+        branch(&after).last_commit_date
+    );
+    assert_eq!(branch(&before).head.as_deref(), Some(old.as_str()));
+    assert_eq!(branch(&after).head.as_deref(), Some(new.as_str()));
+    assert_eq!(before.head, after.head);
+    assert_ne!(before.revision, after.revision);
+}
+
+#[test]
 fn revision_detects_edits_even_when_git_status_is_unchanged() {
     let directory = tests::repo();
     let root = directory.path();

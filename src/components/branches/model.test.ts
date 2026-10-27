@@ -3,7 +3,7 @@ import type { GitBranch } from '../../services/git';
 import { recentBranchGroups, sixMonthsAgo } from './model';
 
 const now = new Date(2026, 9, 21, 12);
-const branch = (name: string, lastCommitDate: string | null, remote = false, current = false): GitBranch => ({ name, lastCommitDate, remote, current });
+const branch = (name: string, lastCommitDate: string | null, remote = false, current = false): GitBranch => ({ name, lastCommitDate, remote, current, head: null });
 
 describe('recent branch grouping', () => {
   it('separates local and remote branches and orders each by most recent commit', () => {

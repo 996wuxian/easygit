@@ -32,11 +32,24 @@ pub(super) fn commit_hash(root: &Path, value: &str) -> Result<String, String> {
 }
 
 pub(super) fn patch(root: &Path, args: &[&str]) -> Result<String, String> {
-    let bytes = run(root, args)?;
-    if bytes.len() > 2 * 1024 * 1024 {
-        return Err("差异超过 2 MB，请使用外部工具查看。".into());
-    }
+    let bytes = super::run_mode(root, args, super::OutputMode::Bounded(super::DIFF_LIMIT))?;
     String::from_utf8(bytes).map_err(|_| "差异不是 UTF-8 文本，请使用外部工具查看。".into())
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn rejects_large_patch_during_git_output_read() {
+        let directory = super::super::tests::repo();
+        let root = directory.path();
+        fs::write(root.join("large.txt"), "text line\n".repeat(300_000)).unwrap();
+        run(root, &["add", "--", "large.txt"]).unwrap();
+        let error = patch(root, &["diff", "--cached", "--", "large.txt"]).unwrap_err();
+        assert!(error.contains("输出超过"), "{error}");
+    }
 }
 
 fn parse_files(bytes: &[u8]) -> Result<Vec<RevisionFile>, String> {

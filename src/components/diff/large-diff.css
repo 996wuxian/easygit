@@ -1,0 +1,7 @@
+.large-diff { min-width: max-content; }
+.large-diff-notice { position: sticky; left: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 15px; background: var(--bg-soft); color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.large-diff-notice small { color: var(--text-dim); }
+.large-diff-notice button { font-size: 11px; }
+.large-diff-raw { margin: 0; padding: 0 15px; color: var(--text); font: 12px/23px var(--mono); white-space: pre; tab-size: 2; }
+.wrap-code .large-diff { min-width: 0; }
+.wrap-code .large-diff-raw { white-space: pre-wrap; word-break: break-all; }

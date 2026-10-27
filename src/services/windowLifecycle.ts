@@ -1,5 +1,6 @@
 import { invokeCommand } from './git';
 import { flushStorage, STORAGE_ERROR_EVENT } from './storage';
+import { confirmPendingChanges, hasPendingChanges } from './pendingChanges';
 
 export async function initializeWindowLifecycle(): Promise<() => void> {
   const { listen } = await import('@tauri-apps/api/event');
@@ -9,6 +10,8 @@ export async function initializeWindowLifecycle(): Promise<() => void> {
     exiting = true;
     void (async () => {
       try {
+        if (hasPendingChanges()) await invokeCommand<void>('show_main_window');
+        if (!await confirmPendingChanges()) { exiting = false; return; }
         await flushStorage();
         await invokeCommand<void>('exit_app');
       } catch (error) {

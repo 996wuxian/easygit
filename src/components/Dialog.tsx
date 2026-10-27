@@ -8,10 +8,11 @@ export function Dialog({ title, onClose, children, className = '', hideHeading =
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const root = dialogRef.current;
-    const tabbable = () => Array.from(root?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') ?? []).filter(node => !node.hidden);
+    const tabbable = () => Array.from(root?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"], [contenteditable="true"]') ?? []).filter(node => !node.hidden);
     const first = root?.querySelector<HTMLElement>('[autofocus], input:not(:disabled), textarea:not(:disabled), select:not(:disabled)') ?? tabbable()[0];
     first?.focus({ preventScroll: true });
     const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
       if (dialogs.item(dialogs.length - 1) !== root) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }

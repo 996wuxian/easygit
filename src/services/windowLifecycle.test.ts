@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from './git';
 import { flushStorage, STORAGE_ERROR_EVENT } from './storage';
 import { initializeWindowLifecycle } from './windowLifecycle';
+import { registerPendingChangesGuard } from './pendingChanges';
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
 vi.mock('./git', () => ({ invokeCommand: vi.fn() }));
@@ -29,7 +30,7 @@ describe('托盘退出', () => {
     vi.mocked(flushStorage).mockReturnValue(new Promise(resolve => { finish = resolve; }));
     quit();
     quit();
-    expect(flushStorage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(flushStorage).toHaveBeenCalledTimes(1));
     expect(invokeCommand).not.toHaveBeenCalledWith('exit_app');
     finish();
     await vi.waitFor(() => expect(invokeCommand).toHaveBeenCalledWith('exit_app'));
@@ -59,5 +60,24 @@ describe('托盘退出', () => {
     vi.mocked(invokeCommand).mockRejectedValue(new Error('注册失败'));
     await expect(initializeWindowLifecycle()).rejects.toThrow('注册失败');
     expect(unlisten).toHaveBeenCalledOnce();
+  });
+
+  it('未保存确认期间不退出，取消后允许再次请求退出', async () => {
+    const { quit } = await register();
+    let decide!: (value: boolean) => void;
+    const guard = vi.fn(() => new Promise<boolean>(resolve => { decide = resolve; }));
+    const unregister = registerPendingChangesGuard(guard);
+    try {
+      quit(); quit();
+      await vi.waitFor(() => expect(guard).toHaveBeenCalledTimes(1));
+      expect(flushStorage).not.toHaveBeenCalled();
+      decide(false);
+      await vi.waitFor(() => expect(invokeCommand).toHaveBeenCalledWith('show_main_window'));
+      await Promise.resolve();
+      expect(invokeCommand).not.toHaveBeenCalledWith('exit_app');
+      guard.mockResolvedValueOnce(true);
+      quit();
+      await vi.waitFor(() => expect(invokeCommand).toHaveBeenCalledWith('exit_app'));
+    } finally { unregister(); }
   });
 });

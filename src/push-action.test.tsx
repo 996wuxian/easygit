@@ -93,7 +93,7 @@ describe('项目远程状态展示', () => {
     vi.mocked(git.fetch).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const date = new Date().toISOString();
     const localCommit = { hash: 'abc123', shortHash: 'abc123', subject: 'Local history', author: 'Developer', date, parents: [], refs: [{ name: 'main', remote: false }], local: true, remote: true };
-    const local = { ...snapshot, hasUpstream: true, upstream: { name: 'origin/main', hash: 'abc123' }, commits: [localCommit], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date }] };
+    const local = { ...snapshot, hasUpstream: true, upstream: { name: 'origin/main', hash: 'abc123' }, commits: [localCommit], branches: [{ name: 'main', current: true, remote: false, lastCommitDate: date, head: 'abc123' }] };
     vi.mocked(git.open).mockResolvedValue(local);
     await openWorkspace();
     const button = host.querySelector<HTMLButtonElement>('[data-eg-panel="branches"] [aria-label="获取远程更新"]')!;
@@ -107,7 +107,7 @@ describe('项目远程状态展示', () => {
     expect(button.disabled).toBe(true);
     expect(host.querySelector<HTMLButtonElement>('[aria-label="刷新仓库"]')!.disabled).toBe(false);
     expect(host.querySelector<HTMLButtonElement>('[aria-label="打开仓库 Alpha"]')!.disabled).toBe(false);
-    const latest = { ...local, behind: 1, upstream: { name: 'origin/main', hash: 'remote-tip' }, commits: [{ ...localCommit, hash: 'remote-tip', shortHash: 'remote', subject: 'New remote commit', parents: ['abc123'], refs: [{ name: 'origin/main', remote: true }], local: false }, localCommit], branches: [...local.branches, { name: 'origin/feature', current: false, remote: true, lastCommitDate: date }] };
+    const latest = { ...local, behind: 1, upstream: { name: 'origin/main', hash: 'remote-tip' }, commits: [{ ...localCommit, hash: 'remote-tip', shortHash: 'remote', subject: 'New remote commit', parents: ['abc123'], refs: [{ name: 'origin/main', remote: true }], local: false }, localCommit], branches: [...local.branches, { name: 'origin/feature', current: false, remote: true, lastCommitDate: date, head: 'remote-tip' }] };
     vi.mocked(git.open).mockResolvedValue(latest);
     await act(async () => { finish(local); });
     expect(button.textContent).toBe('获取更新');
