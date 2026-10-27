@@ -14,7 +14,10 @@
 .app-update-heading, .app-update-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .app-update-heading h3 { margin: 0; font-size: 13px; font-weight: 550; }
 .app-update-heading button, .app-update-actions button { font-size: 11px; }
-.app-update-status { display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 18px 0 10px; }
+.app-update-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
+.app-update-status-row > .text-button { flex-shrink: 0; margin-left: auto; }
+.app-update-status { display: flex; flex: 1; gap: 6px; align-items: center; min-width: 0; font-size: 12px; margin: 0; line-height: 1.6; }
+.app-update-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-update-hint, .app-update-progress small, .app-update-downloaded small { color: var(--text-muted); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
 .app-update-progress { display: grid; gap: 8px; margin: 16px 0; }
 .app-update-progress > div { display: flex; justify-content: space-between; font-size: 11px; }

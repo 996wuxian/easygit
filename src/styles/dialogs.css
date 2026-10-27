@@ -7,7 +7,9 @@
 .open-repo-intro { display: flex; align-items: center; gap: 15px; padding: 16px 0 24px; }
 .dialog-feature-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 13px; background: var(--action); color: var(--action-text); }
 .dialog-backdrop:has(.open-repo-dialog) { background: #00000045; }
-.open-repo-dialog { box-shadow: 0 24px 90px #0000002a; }
+.dialog.open-repo-dialog { display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 90px #0000002a; }
+.open-repo-dialog > :not(.recent-dialog-list) { flex-shrink: 0; }
+.open-repo-dialog > .recent-dialog-list { min-height: 0; align-content: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .repository-directory-input { display: flex; align-items: stretch; gap: 8px; }
 .repository-directory-input > input { flex: 1; min-width: 0; }
 .repository-directory-input > button { flex-shrink: 0; }
@@ -48,21 +50,26 @@
 .discard-changes-note code { color: var(--text); font: 10px var(--mono); }
 .discard-confirm-button { color: #fff; background: #a74b4b; border-color: #a74b4b; }
 .discard-confirm-button:not(:disabled):hover { background: #923f3f; border-color: #923f3f; }
-.layout-options { display: grid; gap: 8px; }
+.dialog.layout-dialog { display: flex; flex-direction: column; overflow: hidden; }
+.layout-dialog > :not(.layout-options) { flex-shrink: 0; }
+.layout-dialog button:focus-visible { outline-color: var(--text-muted); }
+.layout-options { display: grid; align-content: start; gap: 8px; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .layout-options > label { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); padding: 12px; border-radius: 8px; cursor: pointer; }
-.layout-options > label.checked { border-color: #16826c35; background: var(--primary-soft); }
+.layout-options > label.checked { border-color: var(--border); background: var(--bg-card-hover); }
 .layout-option-icon { display: grid; place-items: center; width: 35px; height: 35px; color: var(--text-muted); background: var(--bg-card); border-radius: 7px; }
 .layout-options > label > span:nth-child(2) { flex: 1; }
 .layout-options strong { display: block; font-size: 11px; font-weight: 500; }
 .layout-options small { display: block; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-.layout-options input { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; }
+.layout-options input { accent-color: var(--action); width: 15px; height: 15px; cursor: pointer; }
+.layout-options input:focus-visible { outline: 2px solid var(--text-muted); outline-offset: 2px; box-shadow: none; }
 .dialog-action-row { display: flex; align-items: center; justify-content: space-between; margin-top: 21px; }
 .command-dialog { width: 550px; padding: 16px; }
 .command-dialog .dialog-heading { padding: 0 7px; margin-bottom: 9px; }
 .command-dialog .dialog-heading h2 { font-size: 12px; color: var(--text-muted); }
-.command-search { display: flex; align-items: center; gap: 11px; padding: 13px 8px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
-.command-search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 15px; background: transparent; }
-.command-search > kbd { padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; }
+.command-search { display: flex; align-items: center; gap: 8px; min-height: 36px; margin: 0 7px; padding: 8px 10px; border-radius: 7px; background: var(--bg-soft); color: var(--text-dim); }
+.command-search:focus-within { box-shadow: 0 0 0 2px var(--border); }
+.command-search input { flex: 1; width: 0; min-width: 0; padding: 0; border: 0; outline: none; box-shadow: none; font-size: 13px; line-height: 20px; background: transparent; color: var(--text); }
+.command-search input:focus { border-color: transparent; outline: none; box-shadow: none; }
 .command-dialog .dialog-section-label { margin: 17px 9px 9px; }
 .command-list { display: grid; gap: 3px; }
 .command-list > button { display: flex; align-items: center; gap: 11px; padding: 11px 9px; text-align: left; border-radius: 7px; }
