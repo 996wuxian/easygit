@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconFolder, IconFolderOpen, IconGitBranch, IconHistory, IconKey, IconLayoutDashboard, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconTerminal2, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconFolder, IconFolderOpen, IconGitBranch, IconKey, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, CommitSyncCounts, StashPanel, ActivityPanel, ScriptsPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
@@ -19,6 +19,8 @@ import { DataStorageDialog } from './components/DataStorageDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { ProjectNotesDialog } from './components/ProjectNotesDialog';
 import { SidebarProjectDrawer } from './components/SidebarProjectDrawer';
+import { RepositorySetupDialog } from './components/RepositorySetupDialog';
+import { RemotesDialog } from './components/RemotesDialog';
 import { ToastStack } from './components/notifications/ToastStack';
 import { FileTree } from './components/files/FileTree';
 import { FileEditorDialog } from './components/files/FileEditorDialog';
@@ -33,9 +35,10 @@ import { commitStatus } from './components/commits/model';
 import { useRepository, type RecentRepository } from './services/useRepository';
 import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
 
-type Modal = 'open' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | 'project-notes' | null;
+type Modal = 'open' | 'clone' | 'init' | 'remotes' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | 'project-notes' | null;
 type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
+const SIDEBAR_PANELS = ['changes', 'diff', 'branches', 'commits', 'files'] as const;
 const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
 function readSidebarOrder(): string[] { try { const value: unknown = JSON.parse(appStorage.getItem(SIDEBAR_ORDER_KEY) ?? '[]'); return Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []; } catch { return []; } }
 function readTheme(): 'light' | 'dark' { try { return appStorage.getItem('esaygit.theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }
@@ -104,7 +107,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [commitDetailStatus, setCommitDetailStatus] = useState<string | null>(null);
   const [comparingBranches, setComparingBranches] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string; sourceRemote: boolean; targetRemote: boolean } | null>(null);
-  const [activeNav, setActiveNav] = useState('workspace');
+  const [activeNav, setActiveNav] = useState<PanelId>('changes');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
   const [repositoryTooltip, setRepositoryTooltip] = useState<{ name: string; path: string; left: number; top: number } | null>(null);
   const [sidebarOrder, setSidebarOrder] = useState(readSidebarOrder);
@@ -276,7 +279,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       setSelected(null);
       setStaged(false);
       setSelectedCommit(null);
-      setActiveNav('workspace');
+      setActiveNav('changes');
     }
     cancelRemoval();
   }
@@ -351,12 +354,8 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   const focusPanel = (id: PanelId) => {
     if (!hasRepository) { setModal('open'); return; }
-    if (panels.layout.hidden.includes(id)) {
-      setModal('layout');
-      notify(`请在自定义布局中勾选「${PANEL_TITLES[id]}」面板。`);
-      return;
-    }
-    setActiveNav(['commits', 'branches', 'activity', 'files'].includes(id) ? id : 'workspace');
+    panels.showPanel(id);
+    setActiveNav(id);
     window.setTimeout(() => {
       const node = document.querySelector<HTMLElement>(`[data-eg-panel="${id}"]`);
       node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -367,7 +366,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
-      if (editor.visible || removal || discardConfirmation || conflictFile || blockDiscard) {
+      if (editor.visible || removal || discardConfirmation || conflictFile || blockDiscard || busy && ['clone', 'init', 'remotes'].includes(modal ?? '')) {
         if ((event.ctrlKey || event.metaKey) && ['k', 'o', 'r'].includes(event.key.toLowerCase())) event.preventDefault();
         return;
       }
@@ -378,20 +377,23 @@ export default function App({ onReady }: { onReady: () => void }) {
     };
     window.addEventListener('keydown', shortcuts);
     return () => window.removeEventListener('keydown', shortcuts);
-  }, [modal, editor.visible, removal, discardConfirmation, conflictFile, blockDiscard, repo.refresh]);
+  }, [modal, busy, editor.visible, removal, discardConfirmation, conflictFile, blockDiscard, repo.refresh]);
 
   const actions = useMemo(() => [
     { id: 'open', icon: IconFolderOpen, title: '打开本地仓库', detail: '输入 Git 项目目录', shortcut: 'Ctrl O', run: () => setModal('open') },
+    { id: 'clone', icon: IconArrowDown, title: '克隆仓库', detail: '从 HTTPS、SSH 或本地地址下载仓库', shortcut: '', run: () => setModal('clone') },
+    { id: 'init', icon: IconPlus, title: '初始化仓库', detail: '为现有项目启用 Git 版本管理', shortcut: '', run: () => setModal('init') },
+    { id: 'remotes', icon: IconGitPullRequest, title: '配置远程仓库', detail: '查看、添加或修改远程地址', shortcut: '', run: () => setModal('remotes') },
     { id: 'refresh', icon: IconRefresh, title: '刷新仓库状态', detail: '获取当前工作区的最新状态', shortcut: 'Ctrl R', run: () => { closeModal(); void repo.refresh(); } },
     { id: 'layout', icon: IconLayoutGrid, title: '自定义工作台', detail: '显示、隐藏和重新排列面板', shortcut: '', run: () => setModal('layout') },
     { id: 'theme', icon: theme === 'light' ? IconMoon : IconSun, title: theme === 'light' ? '切换深色主题' : '切换浅色主题', detail: '界面外观', shortcut: '', run: () => { setTheme(t => t === 'light' ? 'dark' : 'light'); closeModal(); } },
     { id: 'branches', icon: IconGitBranch, title: '切换分支', detail: snapshot.branch, shortcut: '', run: () => setModal('branches') },
     { id: 'files', icon: IconFolder, title: '浏览项目文件', detail: '查看目录和编辑工作区文件', shortcut: '', run: () => { closeModal(); focusPanel('files'); } },
-  ].filter(action => hasRepository || !['refresh', 'branches', 'files'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal, panels.layout]);
+  ].filter(action => hasRepository || !['refresh', 'branches', 'files', 'remotes'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal, panels.layout]);
 
   async function openPath(value = path) {
     if (await repo.open(value)) {
-      setPath(''); closeModal(); setActiveNav('workspace');
+      setPath(''); closeModal(); setActiveNav('changes');
       setSelectedCommit(null); setCommitDetailStatus(null); setComparingBranches(false); setMergeRequest(null);
     }
   }
@@ -440,13 +442,12 @@ export default function App({ onReady }: { onReady: () => void }) {
     </header>
 
     <aside ref={sidebarRef} className="sidebar" aria-label="工具栏">
-      <button className="rail-brand" title="easygit · 返回工作台" aria-label="返回工作台" onClick={() => { setActiveNav('workspace'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><img src="/brand/esaygit-icon.png" alt="" draggable={false} /></button>
+      <button className="rail-brand" title="easygit · 返回工作台" aria-label="返回工作台" onClick={() => { setActiveNav('changes'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><img src="/brand/esaygit-icon.png" alt="" draggable={false} /></button>
       <nav className="main-nav" aria-label="主导航">
-        <button title="工作台" aria-label="工作台" aria-current={activeNav === 'workspace' ? 'page' : undefined} className={activeNav === 'workspace' ? 'active' : ''} onClick={() => { setActiveNav('workspace'); document.querySelector('.main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><IconLayoutDashboard size={20} /></button>
-        <button title="提交历史" aria-label="提交历史" aria-current={activeNav === 'commits' ? 'page' : undefined} className={activeNav === 'commits' ? 'active' : ''} onClick={() => focusPanel('commits')}><IconHistory size={21} /></button>
-        <button title="分支管理" aria-label="分支管理" aria-current={activeNav === 'branches' ? 'page' : undefined} className={activeNav === 'branches' ? 'active' : ''} onClick={() => focusPanel('branches')}><IconGitBranch size={20} /></button>
-        <button title="项目文件" aria-label="项目文件" aria-current={activeNav === 'files' ? 'page' : undefined} className={activeNav === 'files' ? 'active' : ''} onClick={() => focusPanel('files')}><IconFolder size={20} /></button>
-        <button title="操作记录" aria-label="操作记录" aria-current={activeNav === 'activity' ? 'page' : undefined} className={activeNav === 'activity' ? 'active' : ''} onClick={() => focusPanel('activity')}><IconTerminal2 size={20} /></button>
+        {SIDEBAR_PANELS.map(id => {
+          const Icon = panelIcons[id];
+          return <button key={id} title={PANEL_TITLES[id]} aria-label={PANEL_TITLES[id]} aria-current={activeNav === id ? 'page' : undefined} className={activeNav === id ? 'active' : ''} onClick={() => focusPanel(id)}><Icon size={20} /></button>;
+        })}
       </nav>
       <span className="rail-divider" />
       <div className="repository-navigation" aria-label="仓库列表">
@@ -486,7 +487,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
         <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button></div></div>
 
-        <WorkspaceGrid panelTitles={{ commits: <><span>{PANEL_TITLES.commits}</span><CommitSyncCounts snapshot={snapshot} /></>, scripts: scriptCount?.path === snapshot.path && scriptCount.count !== null ? `项目脚本 · ${scriptCount.count}` : PANEL_TITLES.scripts }} layout={panels.layout} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
+        <WorkspaceGrid panelTitles={{ commits: <><span>{PANEL_TITLES.commits}</span><CommitSyncCounts snapshot={snapshot} /></>, scripts: scriptCount?.path === snapshot.path && scriptCount.count !== null ? `项目脚本 · ${scriptCount.count}` : PANEL_TITLES.scripts }} layout={panels.layout} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><button className="icon-button" aria-label="配置远程仓库" title="配置远程仓库地址" disabled={busy} onClick={() => setModal('remotes')}><IconSettings size={15} /></button><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
 
         <div className="workspace-footer"><span>{repo.gitVersion || snapshot.gitVersion}</span><span>拖动 <span className="footer-grip">⠿</span> 调整位置 · 拖动边框调整大小<span className="footer-divider">·</span><kbd>Ctrl K</kbd> 命令</span></div>
       </div> : <section className="repository-empty" aria-label="尚未打开仓库">
@@ -494,11 +495,12 @@ export default function App({ onReady }: { onReady: () => void }) {
         <h1>打开一个仓库</h1>
         <p>选择本地 Git 项目以开始。</p>
         <button className="primary-button" disabled={busy} onClick={() => setModal('open')}><IconPlus size={16} />打开仓库<kbd>Ctrl O</kbd></button>
+        <div className="repository-entry-actions"><button className="secondary-button" disabled={busy} onClick={() => setModal('clone')}><IconArrowDown size={16} />克隆仓库</button><button className="secondary-button" disabled={busy} onClick={() => setModal('init')}><IconGitBranch size={16} />初始化仓库</button></div>
         {repo.recents.length > 0 && <div className="empty-recent-list"><span>最近打开</span>{repo.recents.map(item => <button key={item.path} disabled={busy || !isDesktop()} title={item.path} onClick={() => { void openPath(item.path); }}><IconFolder size={16} /><strong>{item.name}</strong><small>{item.path}</small><IconChevronRight size={14} /></button>)}</div>}
       </section>}
     </main>
 
-    {modal === 'open' && <Dialog title="打开一个 Git 仓库" onClose={() => { if (!pickingDirectory && !busy) closeModal(); }} className="open-repo-dialog"><div className="open-repo-intro"><span className="dialog-feature-icon"><IconFolderOpen size={26} stroke={1.5} /></span><p>打开本地 Git 项目目录。<br /><strong>支持普通仓库和 worktree。</strong></p></div><form onSubmit={event => { event.preventDefault(); if (!pickingDirectory) void openPath(); }}><label className="field-label" htmlFor="repo-path">仓库目录</label><RepositoryDirectoryInput value={path} onChange={setPath} defaultPath={snapshot.path} busy={busy} onPendingChange={setPickingDirectory} notify={notify} /><p className="field-help">选择或填写包含 .git 的项目目录，也支持 Git worktree。</p>{!isDesktop() && <div className="preview-note">打开本地仓库需要运行 easygit 桌面版。</div>}<button className="primary-button dialog-submit" type="submit" disabled={!path.trim() || busy || pickingDirectory || !isDesktop()}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconFolderOpen size={16} />}打开仓库</button></form>{workspaces.length > 0 && <><div className="dialog-section-label">最近打开</div><div className="recent-dialog-list">{workspaces.map(item => <div className="recent-dialog-row" key={item.path}><button disabled={busy} onClick={() => { void openPath(item.path); }}><IconFolder size={19} /><span><strong>{item.name}</strong><small>{item.path}</small></span><IconChevronRight size={16} /></button><button className="icon-button" title="从 easygit 移除工作区" aria-label={`移除工作区 ${item.name}`} disabled={busy} onClick={() => requestRemoval(item)}><IconX size={14} /></button></div>)}</div></>}</Dialog>}
+    {modal === 'open' && <Dialog title="打开一个 Git 仓库" onClose={() => { if (!pickingDirectory && !busy) closeModal(); }} className="open-repo-dialog"><div className="open-repo-intro"><span className="dialog-feature-icon"><IconFolderOpen size={26} stroke={1.5} /></span><p>打开本地 Git 项目目录。<br /><strong>支持普通仓库和 worktree。</strong></p></div><form onSubmit={event => { event.preventDefault(); if (!pickingDirectory) void openPath(); }}><label className="field-label" htmlFor="repo-path">仓库目录</label><RepositoryDirectoryInput value={path} onChange={setPath} defaultPath={snapshot.path} busy={busy} onPendingChange={setPickingDirectory} notify={notify} /><p className="field-help">选择或填写包含 .git 的项目目录，也支持 Git worktree。</p>{!isDesktop() && <div className="preview-note">打开本地仓库需要运行 easygit 桌面版。</div>}<button className="primary-button dialog-submit" type="submit" disabled={!path.trim() || busy || pickingDirectory || !isDesktop()}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconFolderOpen size={16} />}打开仓库</button></form><div className="repository-entry-actions"><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('clone')}><IconArrowDown size={16} />克隆仓库</button><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('init')}><IconGitBranch size={16} />初始化仓库</button></div>{workspaces.length > 0 && <><div className="dialog-section-label">最近打开</div><div className="recent-dialog-list">{workspaces.map(item => <div className="recent-dialog-row" key={item.path}><button disabled={busy} onClick={() => { void openPath(item.path); }}><IconFolder size={19} /><span><strong>{item.name}</strong><small>{item.path}</small></span><IconChevronRight size={16} /></button><button className="icon-button" title="从 easygit 移除工作区" aria-label={`移除工作区 ${item.name}`} disabled={busy} onClick={() => requestRemoval(item)}><IconX size={14} /></button></div>)}</div></>}</Dialog>}
 
     {modal === 'create-branch' && <Dialog title="创建本地分支" onClose={closeModal} className="create-branch-dialog"><form onSubmit={event => { event.preventDefault(); const name = branchName.trim(); if (!name) return; void repo.createBranch(name).then(success => { if (success) { setBranchName(''); closeModal(); } }); }}><p className="dialog-description">从 <code>{snapshot.branch || '当前提交'}</code> 创建并切换到新分支。</p><label className="field-label" htmlFor="new-branch-name">新分支名称</label><input id="new-branch-name" className="text-field mono" value={branchName} onChange={event => setBranchName(event.target.value)} placeholder="例如 feature/login" autoFocus spellCheck={false} /><p className="field-help">输入新的本地分支名，不能与现有分支重名。</p><div className="dialog-action-row"><button className="text-button" type="button" disabled={busy} onClick={closeModal}>取消</button><button className="primary-button" type="submit" disabled={!branchName.trim() || busy}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconGitBranch size={16} />}创建并切换</button></div></form></Dialog>}
 
@@ -508,8 +510,16 @@ export default function App({ onReady }: { onReady: () => void }) {
 
     {modal === 'branches' && <Dialog title="切换分支" onClose={closeModal}><p className="dialog-description">当前分支：<code>{snapshot.branch}</code></p><BranchesPanel onBranchAction={repo.manageBranch} notify={repo.notify} snapshot={snapshot} busy={busy} mergeDisabled={mergeDisabled} onMergeRequest={requestBranchMerge} onCheckout={(name, remote) => { void repo.checkout(name, remote).then(ok => { if (ok) closeModal(); }); }} /></Dialog>}
 
+    {(modal === 'clone' || modal === 'init') && <RepositorySetupDialog key={modal} mode={modal} defaultPath={snapshot.path} busy={busy} notify={notify} onClose={closeModal} onCreate={async (request, progress, onError) => {
+      const success = await repo.setupRepository(request, progress, onError);
+      if (success) { setPath(''); setActiveNav('changes'); setSelectedCommit(null); setCommitDetailStatus(null); setComparingBranches(false); setMergeRequest(null); }
+      return success;
+    }} />}
+    {modal === 'remotes' && hasRepository && <RemotesDialog key={snapshot.path} path={snapshot.path} busy={busy} syncing={syncing} onSave={repo.configureRemote} onClose={closeModal} />}
+
     {modal === 'settings' && <Dialog title="偏好设置" onClose={closeModal}>
       <div className="settings-section"><h3><IconPalette size={17} />外观</h3><p>选择界面主题。</p><div className="theme-options"><button className={theme === 'light' ? 'chosen' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><i /><i /></span><span><IconSun size={16} />浅色{theme === 'light' && <IconCheck size={15} />}</span></button><button className={theme === 'dark' ? 'chosen' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><i /><i /></span><span><IconMoon size={16} />深色{theme === 'dark' && <IconCheck size={15} />}</span></button></div></div>
+      {hasRepository && <button className="settings-link" onClick={() => setModal('remotes')}><IconGitPullRequest size={19} /><span><strong>远程仓库</strong><small>添加、修改或移除当前项目的远程地址</small></span><IconChevronRight size={17} /></button>}
       <button className="settings-link" onClick={() => setModal('ai-settings')}><IconKey size={19} /><span><strong>AI 提交信息</strong><small>{aiSettings.apiKey ? '已配置第三方 AI 服务' : '配置 API Key，按差异生成提交信息'}</small></span><IconChevronRight size={17} /></button>
       <button className="settings-link" onClick={() => setModal('data-settings')}><IconFolder size={19} /><span><strong>数据存储</strong><small>查看、打开或迁移本机数据目录</small></span><IconChevronRight size={17} /></button>
       <button className="settings-link" onClick={() => setModal('layout')}><IconLayoutGrid size={19} /><span><strong>面板与布局</strong><small>选择面板，自由组织工作台</small></span><IconChevronRight size={17} /></button>

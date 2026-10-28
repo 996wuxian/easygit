@@ -38,7 +38,7 @@ export function ScriptsPanel({ snapshot, notify, onCountChange }: { snapshot: Re
   useEffect(() => { onCountChange?.(snapshot.path, info?.packageFound ? info.scripts.length : null); }, [snapshot.path, info, onCountChange]);
   const loading = !current || current.loading;
   const showLoading = loading && ((!info && !current?.error) || Boolean(current?.manual));
-  const footer = current?.error && info ? '刷新失败，保留上次读取的脚本；可点击刷新重试' : lastLaunch ? `已打开终端：${lastLaunch}` : '在项目目录打开终端，保留命令输出';
+  const footer = current?.error && info ? '刷新失败，保留上次读取的脚本；可点击刷新重试' : lastLaunch ? `已打开终端：${lastLaunch}` : '';
   const showScriptTooltip = (row: HTMLElement, script: ProjectScript) => overflow.show(row, `${script.name}\n${script.command}`, 'strong, code', `script:${script.name}`);
   const launch = async (script: ProjectScript) => {
     if (launchRef.current || showLoading || !info || !runnableName(script.name)) return;
@@ -63,8 +63,8 @@ export function ScriptsPanel({ snapshot, notify, onCountChange }: { snapshot: Re
       <div><strong>{script.name}</strong><code>{script.command}</code></div>
       <button className="icon-button project-script-run" aria-label={`运行脚本 ${script.name}`} aria-description={runnableName(script.name) ? `在终端运行 ${info.manager} run ${script.name}` : '脚本名包含终端不支持的特殊字符'} disabled={showLoading || launching !== null || !runnableName(script.name)} onClick={() => { overflow.hide(); void launch(script); }}>{launching === script.name ? <IconLoader2 className="spin" size={17} /> : <IconPlayerPlay size={17} />}</button>
     </div>)}</div>}
-    <div className={`project-scripts-footer ${current?.error && info ? 'refresh-error' : ''}`} role="status" aria-describedby={overflow.describedBy('footer')}
-      onMouseEnter={event => overflow.show(event.currentTarget, current?.error ? `${footer}\n${current.error}` : footer, '.project-scripts-footer', 'footer')} onMouseLeave={overflow.hide}>{footer}</div>
+    {footer && <div className={`project-scripts-footer ${current?.error && info ? 'refresh-error' : ''}`} role="status" aria-describedby={overflow.describedBy('footer')}
+      onMouseEnter={event => overflow.show(event.currentTarget, current?.error ? `${footer}\n${current.error}` : footer, '.project-scripts-footer', 'footer')} onMouseLeave={overflow.hide}>{footer}</div>}
     {overflow.tooltip}
   </div>;
 }

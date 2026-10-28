@@ -33,6 +33,47 @@ async fn open_repository(path: String) -> Result<RepositorySnapshot, String> {
 }
 
 #[tauri::command]
+async fn clone_repository(
+    state: tauri::State<'_, git::CloneState>,
+    id: String,
+    url: String,
+    parent: String,
+    name: String,
+    on_progress: tauri::ipc::Channel<git::CloneProgress>,
+) -> Result<RepositorySnapshot, String> {
+    let task = state.register(id)?;
+    blocking(move || {
+        git::clone_repository(&url, &parent, &name, task, |update| {
+            let _ = on_progress.send(update);
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+fn cancel_clone(state: tauri::State<'_, git::CloneState>, id: String) -> Result<(), String> {
+    state.cancel(&id)
+}
+
+#[tauri::command]
+async fn initialize_repository(path: String, branch: String) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::initialize_repository(&path, &branch)).await
+}
+
+#[tauri::command]
+async fn read_remotes(path: String) -> Result<Vec<git::GitRemote>, String> {
+    blocking(move || git::read_remotes(&path)).await
+}
+
+#[tauri::command]
+async fn configure_remote(
+    path: String,
+    request: git::RemoteRequest,
+) -> Result<RepositorySnapshot, String> {
+    blocking(move || git::configure_remote(&path, request)).await
+}
+
+#[tauri::command]
 async fn pick_repository_directory(
     window: tauri::WebviewWindow,
     default_path: Option<String>,
@@ -42,7 +83,7 @@ async fn pick_repository_directory(
             .dialog()
             .file()
             .set_parent(&window)
-            .set_title("选择 Git 仓库文件夹");
+            .set_title("选择文件夹");
         if let Some(path) = default_path.filter(|path| std::path::Path::new(path).is_dir()) {
             dialog = dialog.set_directory(path);
         }
@@ -467,6 +508,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(updates::UpdateState::default())
         .manage(git::FileSearchState::default())
+        .manage(git::CloneState::default())
         .setup(tray::setup)
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -496,6 +538,11 @@ pub fn run() {
             storage::open_data_directory,
             bootstrap,
             open_repository,
+            clone_repository,
+            cancel_clone,
+            initialize_repository,
+            read_remotes,
+            configure_remote,
             pick_repository_directory,
             open_repository_directory,
             read_project_scripts,

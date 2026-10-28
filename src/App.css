@@ -171,7 +171,9 @@ code, .mono { font-family: var(--mono); }
 .panel-count { padding: 2px 5px; background: var(--bg-soft); color: var(--text-muted); min-width: 20px; border-radius: 4px; text-align: center; font: 10px var(--mono); }
 .panel-subtitle { font-size: 10px; color: var(--text-dim); margin-right: 3px; }
 .eg-panel--changes .eg-panel-content, .eg-panel--diff .eg-panel-content { height: 320px; }
-.eg-panel--branches .eg-panel-content, .eg-panel--commits .eg-panel-content, .eg-panel--stash .eg-panel-content { height: 180px; overflow: auto; }
+.eg-panel--branches .eg-panel-content, .eg-panel--commits .eg-panel-content, .eg-panel--scripts .eg-panel-content { height: 260px; }
+.eg-panel--branches .eg-panel-content, .eg-panel--commits .eg-panel-content, .eg-panel--stash .eg-panel-content { overflow: auto; }
+.eg-panel--stash .eg-panel-content { height: 180px; }
 .eg-panel--activity .eg-panel-content { max-height: 240px; overflow: auto; }
 .panel-highlight { border-color: var(--primary) !important; }
 .workspace-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 3px 0; font-size: 10px; color: var(--text-dim); }
@@ -183,7 +185,7 @@ code, .mono { font-family: var(--mono); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@media(min-height: 980px) { .eg-panel--changes .eg-panel-content, .eg-panel--diff .eg-panel-content { height: 365px; } .eg-panel--branches .eg-panel-content, .eg-panel--commits .eg-panel-content, .eg-panel--stash .eg-panel-content { height: 213px; } }
+@media(min-height: 980px) { .eg-panel--changes .eg-panel-content, .eg-panel--diff .eg-panel-content { height: 365px; } .eg-panel--stash .eg-panel-content { height: 213px; } }
 @media(max-width: 1150px) { .repository-overview { gap: 10px; } .branch-card { padding-left: 15px; padding-right: 15px; } .metric-card { padding-left: 15px; padding-right: 15px; } .topbar-search { width: 220px; } }
 @media(max-width: 800px) { .app-shell { grid-template-columns: 54px minmax(0, 1fr); column-gap: 10px; padding: 0 10px 10px; } .sidebar { border-radius: 16px; padding-left: 7px; padding-right: 7px; } .repository-list-area { width: calc(100% + 14px); } .repository-list-scroll { padding-left: 7px; padding-right: 7px; } .workspace-topbar { min-height: 57px; } .topbar-search { width: 32px; padding: 0; justify-content: center; background: transparent; } .topbar-search > span, .topbar-search > kbd { display: none; } .repository-switcher > strong { max-width: 180px; } .titlebar-center { display: none; } .layout-saved { display: none; } .branch-card { padding-left: 13px; padding-right: 13px; gap: 8px; } .branch-card > strong { font-size: 13px; } .metric-card { padding-left: 12px; padding-right: 12px; } .metric-card > strong { font-size: 22px; } .heading-repo { font-size: 13px; } .workspace-status { font-size: 10px; } }
 @media(max-width: 800px) { .main-nav > button.active::before, .repository-item.selected::before { left: -7px; } }

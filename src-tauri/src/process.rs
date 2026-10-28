@@ -69,6 +69,7 @@ impl Drop for ProcessJob {
 
 const DEFAULT_STDOUT_LIMIT: usize = 64 * 1024 * 1024;
 const DEFAULT_STDERR_LIMIT: usize = 1024 * 1024;
+type ProgressCallback<'a> = &'a mut dyn FnMut(&[u8]);
 
 #[derive(Clone, Copy)]
 enum PipeLimit {
@@ -76,29 +77,41 @@ enum PipeLimit {
     Prefix(usize),
 }
 
-fn read_pipe(
+fn read_pipe(pipe: impl Read + Send + 'static, limit: PipeLimit) -> Receiver<io::Result<Vec<u8>>> {
+    read_pipe_observed(pipe, limit, None)
+}
+
+fn read_pipe_observed(
     mut pipe: impl Read + Send + 'static,
     limit: PipeLimit,
+    progress: Option<mpsc::SyncSender<Vec<u8>>>,
 ) -> Receiver<io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut bytes = Vec::new();
         let result = match limit {
-            PipeLimit::Reject(limit) => {
-                // Read one extra byte to distinguish an exact fit from overflow.
-                pipe.take(limit.saturating_add(1) as u64)
-                    .read_to_end(&mut bytes)
-                    .and_then(|_| {
-                        if bytes.len() > limit {
-                            Err(io::Error::new(
+            PipeLimit::Reject(limit) => (|| {
+                let mut buffer = [0; 4096];
+                loop {
+                    let count = match pipe.read(&mut buffer) {
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        result => result?,
+                    };
+                    if count == 0 {
+                        return Ok(bytes);
+                    }
+                    if bytes.len().saturating_add(count) > limit {
+                        return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
                                 format!("Git 输出超过允许的大小（{limit} 字节），已停止本次任务。操作可能已部分完成，请刷新仓库状态后再继续。"),
-                            ))
-                        } else {
-                            Ok(bytes)
-                        }
-                    })
-            }
+                            ));
+                    }
+                    bytes.extend_from_slice(&buffer[..count]);
+                    if let Some(sender) = &progress {
+                        let _ = sender.try_send(buffer[..count].to_vec());
+                    }
+                }
+            })(),
             PipeLimit::Prefix(limit) => {
                 // Preserve a prefix for callers that deliberately truncate,
                 // but drain the rest so the child can exit and report errors.
@@ -181,6 +194,7 @@ pub fn output_with_limit(
         PipeLimit::Reject(stdout_limit),
         stderr_limit,
         None,
+        None,
     )
 }
 
@@ -195,6 +209,7 @@ pub fn output_with_prefix(
         timeout,
         PipeLimit::Prefix(stdout_prefix),
         stderr_limit,
+        None,
         None,
     )
 }
@@ -214,6 +229,24 @@ pub fn output_with_cancellation(
         PipeLimit::Reject(stdout_limit),
         stderr_limit,
         Some(cancelled),
+        None,
+    )
+}
+
+/// Stream bounded stderr progress while retaining cancellation and tree cleanup.
+pub fn output_with_progress(
+    command: &mut Command,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+    progress: &mut dyn FnMut(&[u8]),
+) -> io::Result<Output> {
+    output_with_policy(
+        command,
+        timeout,
+        PipeLimit::Reject(DEFAULT_STDOUT_LIMIT),
+        DEFAULT_STDERR_LIMIT,
+        Some(cancelled),
+        Some(progress),
     )
 }
 
@@ -223,6 +256,7 @@ fn output_with_policy(
     stdout_limit: PipeLimit,
     stderr_limit: usize,
     cancelled: Option<&AtomicBool>,
+    mut progress: Option<ProgressCallback<'_>>,
 ) -> io::Result<Output> {
     if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
@@ -237,15 +271,22 @@ fn output_with_policy(
         return Err(error);
     }
     let stdout_receiver = read_pipe(child.stdout.take().expect("stdout is piped"), stdout_limit);
-    let stderr_receiver = read_pipe(
+    let (progress_sender, progress_receiver) = mpsc::sync_channel(8);
+    let stderr_receiver = read_pipe_observed(
         child.stderr.take().expect("stderr is piped"),
         PipeLimit::Reject(stderr_limit),
+        progress.as_ref().map(|_| progress_sender),
     );
     let deadline = Instant::now() + timeout;
     let mut status = None;
     let mut stdout = None;
     let mut stderr = None;
     loop {
+        for bytes in progress_receiver.try_iter() {
+            if let Some(callback) = progress.as_mut() {
+                callback(&bytes);
+            }
+        }
         if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stop_process_tree(&mut child);
             return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
@@ -298,6 +339,13 @@ mod tests {
             Ok("pipes") => {
                 io::stdout().write_all(&vec![b'x'; 256 * 1024]).unwrap();
                 io::stderr().write_all(&vec![b'y'; 256 * 1024]).unwrap();
+            }
+            Ok("progress") => {
+                io::stderr()
+                    .write_all(b"Receiving objects: 42% (42/100)\r")
+                    .unwrap();
+                io::stderr().flush().unwrap();
+                thread::sleep(Duration::from_secs(20));
             }
             Ok("stdout-overflow") => {
                 io::stdout().write_all(&vec![b'x'; 256 * 1024]).ok();
@@ -435,6 +483,26 @@ mod tests {
         cancelled.store(true, Ordering::Relaxed);
         let error = worker.join().unwrap().unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn progress_is_delivered_before_exit_and_can_cancel_the_process() {
+        let cancelled = AtomicBool::new(false);
+        let started = Instant::now();
+        let mut seen = Vec::new();
+        let error = output_with_progress(
+            &mut fixture_command("progress"),
+            Duration::from_secs(5),
+            &cancelled,
+            &mut |bytes| {
+                seen.extend_from_slice(bytes);
+                cancelled.store(true, Ordering::Relaxed);
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(String::from_utf8_lossy(&seen).contains("42%"));
         assert!(started.elapsed() < Duration::from_secs(3));
     }
 }

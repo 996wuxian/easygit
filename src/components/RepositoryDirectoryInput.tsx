@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { IconFolderOpen, IconLoader2 } from '@tabler/icons-react';
 import { git, isDesktop } from '../services/git';
 
-export function RepositoryDirectoryInput({ value, onChange, defaultPath, busy, onPendingChange, notify }: {
+export function RepositoryDirectoryInput({ value, onChange, defaultPath, busy, onPendingChange, notify, id = 'repo-path', label = '选择仓库文件夹' }: {
   value: string; onChange: (path: string) => void; defaultPath: string; busy: boolean;
   onPendingChange: (pending: boolean) => void; notify: (message: string, error?: boolean) => void;
+  id?: string; label?: string;
 }) {
   const [picking, setPicking] = useState(false);
   const pending = useRef(false);
@@ -32,8 +33,8 @@ export function RepositoryDirectoryInput({ value, onChange, defaultPath, busy, o
     }
   };
   return <div className="repository-directory-input">
-    <input ref={inputRef} id="repo-path" className="text-field mono" placeholder="例如 X:\Projects\my-repository" value={value} onChange={event => onChange(event.target.value)} disabled={busy || picking} autoFocus />
-    <button type="button" className="secondary-button" aria-label="选择仓库文件夹" aria-busy={picking} disabled={busy || picking || !isDesktop()} onClick={() => { void choose(); }}>
+    <input ref={inputRef} id={id} className="text-field mono" placeholder="例如 X:\Projects\my-repository" value={value} onChange={event => onChange(event.target.value)} disabled={busy || picking} autoFocus />
+    <button type="button" className="secondary-button" aria-label={label} aria-busy={picking} disabled={busy || picking || !isDesktop()} onClick={() => { void choose(); }}>
       {picking ? <IconLoader2 size={16} className="spin" /> : <IconFolderOpen size={16} />}{picking ? '正在选择…' : '选择文件夹'}
     </button>
   </div>;

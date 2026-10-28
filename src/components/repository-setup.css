@@ -1,0 +1,16 @@
+.dialog.repository-setup-dialog, .dialog.remotes-dialog { width: 560px; }
+.repository-setup-dialog .field-label:not(:first-child) { margin-top: 14px; }
+.repository-entry-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 13px; }
+.open-repo-dialog .repository-entry-actions { padding-top: 15px; border-top: 1px solid var(--border); }
+.setup-target { overflow-wrap: anywhere; }
+.setup-progress { display: flex; align-items: flex-start; gap: 9px; margin: 18px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); font-size: 12px; }
+.setup-progress > svg { flex-shrink: 0; }
+.setup-progress small { display: block; margin-top: 6px; font-size: 11px; color: var(--text-dim); }
+.setup-error { margin: 14px 0 0; padding: 12px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--danger); font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.remote-list { display: grid; gap: 10px; }
+.remote-item { display: flex; align-items: center; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-soft); }
+.remote-item > div { flex: 1; min-width: 0; }
+.remote-item strong { display: block; font-size: 13px; }
+.remote-item code { display: block; margin-top: 7px; font: 11px/1.7 var(--mono); color: var(--text-muted); overflow-wrap: anywhere; user-select: text; }
+.remote-item small { display: block; margin-top: 6px; color: var(--text-muted); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.remote-remove-note { color: var(--text-muted); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; }

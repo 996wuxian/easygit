@@ -31,7 +31,12 @@ mod inspect;
 mod merge;
 mod merge_target;
 mod operations;
+mod setup;
 mod stash;
+pub use setup::{
+    clone_repository, configure_remote, initialize_repository, read_remotes, CloneProgress,
+    CloneState, GitRemote, RemoteRequest,
+};
 #[cfg(test)]
 mod workflow_tests;
 pub use history::{history_page, HistoryPage, HistoryQuery};

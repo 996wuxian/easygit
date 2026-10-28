@@ -4,6 +4,7 @@ import { appStorage } from './storage';
 import { formatCheckoutError, formatFetchError, formatPullError, formatStageError, gitErrorMessage } from './gitErrors';
 import { project, type ProjectText, type DeletedProjectEntry } from './project';
 import { confirmPendingChanges } from './pendingChanges';
+import type { CloneProgress, NewRepositoryRequest, RemoteRequest as ConfigureRemoteRequest } from './git';
 
 export interface RecentRepository { name: string; path: string }
 export interface Activity { id: string; label: string; time: string; error?: boolean; details?: string }
@@ -78,15 +79,15 @@ export function useRepository(onReady: () => void) {
     return promise;
   }, [notify]);
 
-  const open = useCallback(async (path: string) => {
+  const open = useCallback(async (path: string, setup?: { load: () => Promise<RepositorySnapshot>; kind: string; label: string; onError: (message: string) => void }) => {
     if (busyRef.current) return false;
     if (!await confirmPendingChanges() || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
-    setActiveOperation({ kind: 'open', label: '正在打开仓库…' });
+    setActiveOperation(setup ? { kind: setup.kind, label: setup.label } : { kind: 'open', label: '正在打开仓库…' });
     const token = ++generation.current;
     try {
-      const next = await git.open(path.trim());
+      const next = setup ? await setup.load() : await git.open(path.trim());
       if (token !== generation.current) return false;
       session.current++;
       remoteRequest.current?.complete(false);
@@ -100,11 +101,24 @@ export function useRepository(onReady: () => void) {
         return updated;
       });
       notify(`已打开 ${next.name}`);
-      void fetch();
+      if (setup?.kind !== 'clone') void fetch();
       return true;
-    } catch (error) { notify(String(error), true); return false; }
+    } catch (error) {
+      const message = setup?.kind === 'clone' && !/^[\u3400-\u9fff]/.test(gitErrorMessage(error))
+        ? formatFetchError(error).replace('获取远程更新失败：', '克隆失败：') : gitErrorMessage(error);
+      setup?.onError(message);
+      notify(message, true, message === gitErrorMessage(error) ? undefined : gitErrorMessage(error));
+      return false;
+    }
     finally { busyRef.current = false; setBusy(false); setActiveOperation(null); }
   }, [fetch, notify]);
+
+  const setupRepository = (request: NewRepositoryRequest, onProgress: (update: CloneProgress) => void, onError: (message: string) => void) => open('', {
+    kind: request.kind,
+    label: request.kind === 'clone' ? '正在克隆仓库…' : '正在初始化仓库…',
+    load: () => request.kind === 'clone' ? git.clone(request, onProgress) : git.initialize(request.path, request.branch),
+    onError,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -340,6 +354,9 @@ export function useRepository(onReady: () => void) {
     }, formatPullError, { kind: 'pull', label: '正在拉取更新…' });
   };
   const push = () => run('更改已推送到远程仓库', path => git.push(path), undefined, { kind: 'push', label: '正在推送当前分支…' });
+  const configureRemote = (expectedPath: string, request: ConfigureRemoteRequest, onError?: (message: string) => void) => snapshotRef.current.path !== expectedPath || remoteRequest.current
+    ? Promise.resolve(false)
+    : run(request.url === null ? '远程配置已移除' : '远程地址已保存', path => git.configureRemote(path, request), error => { const message = gitErrorMessage(error); onError?.(message); return message; }, { kind: 'remote', label: '正在更新远程配置…' });
   const merge = useCallback(async (preview: MergePreview) => {
     if (busyRef.current || !snapshotRef.current.path) return false;
     const expectedPath = snapshotRef.current.path;
@@ -389,5 +406,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, activeOperation, refreshing, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, deleteProjectEntry, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, activeOperation, refreshing, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, setupRepository, configureRemote, refresh, saveFile, stage, deleteProjectEntry, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

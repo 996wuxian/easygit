@@ -27,6 +27,9 @@ export function usePanelLayout() {
 
   const visiblePanels = useMemo(() => visiblePanelIds(layout), [layout]);
   const togglePanel = useCallback((id: PanelId) => setLayout((current) => togglePanelInLayout(current, id)), []);
+  const showPanel = useCallback((id: PanelId) => setLayout(current => current.hidden.includes(id)
+    ? { ...current, hidden: current.hidden.filter(panel => panel !== id) }
+    : current), []);
   const movePanel = useCallback((active: PanelId, target: PanelId) => {
     setLayout((current) => movePanelInLayout(current, active, target));
   }, []);
@@ -40,5 +43,5 @@ export function usePanelLayout() {
     });
   }, []);
 
-  return { layout, visiblePanels, storageError, togglePanel, movePanel, resizePanel, resetLayout };
+  return { layout, visiblePanels, storageError, togglePanel, showPanel, movePanel, resizePanel, resetLayout };
 }

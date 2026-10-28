@@ -51,6 +51,10 @@ export interface RepositorySnapshot {
 }
 export interface PullResult { snapshot: RepositorySnapshot; conflicted: boolean; error: string | null }
 export interface BootstrapResult { gitAvailable: boolean; gitVersion: string | null; error: string | null }
+export interface CloneProgress { phase: string; percent: number | null }
+export type NewRepositoryRequest = { kind: 'clone'; id: string; url: string; parent: string; name: string } | { kind: 'init'; path: string; branch: string };
+export interface GitRemote { name: string; fetchUrls: string[]; pushUrls: string[] }
+export interface RemoteRequest { name: string; url: string | null; expected: GitRemote | null }
 export type ConflictResolution = 'content' | 'ours' | 'theirs' | 'working' | 'delete';
 export interface ConflictFile {
   ours: string | null; theirs: string | null; working: string | null;
@@ -84,6 +88,17 @@ export async function invokeCommand<T>(command: string, args?: Record<string, un
 export const git = {
   bootstrap: () => invokeCommand<BootstrapResult>('bootstrap'),
   open: (path: string) => invokeCommand<RepositorySnapshot>('open_repository', { path }),
+  clone: async (request: Extract<NewRepositoryRequest, { kind: 'clone' }>, onProgress: (update: CloneProgress) => void) => {
+    const { Channel } = await import('@tauri-apps/api/core');
+    const progress = new Channel<CloneProgress>();
+    progress.onmessage = onProgress;
+    const { id, url, parent, name } = request;
+    return invokeCommand<RepositorySnapshot>('clone_repository', { id, url, parent, name, onProgress: progress });
+  },
+  cancelClone: (id: string) => invokeCommand<void>('cancel_clone', { id }),
+  initialize: (path: string, branch: string) => invokeCommand<RepositorySnapshot>('initialize_repository', { path, branch }),
+  remotes: (path: string) => invokeCommand<GitRemote[]>('read_remotes', { path }),
+  configureRemote: (path: string, request: RemoteRequest) => invokeCommand<RepositorySnapshot>('configure_remote', { path, request }),
   pickDirectory: (defaultPath: string) => invokeCommand<string | null>('pick_repository_directory', { defaultPath: defaultPath.trim() || null }),
   openDirectory: (path: string) => invokeCommand<void>('open_repository_directory', { path }),
   diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
