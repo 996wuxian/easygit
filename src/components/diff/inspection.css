@@ -20,7 +20,6 @@
 .history-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px; font-size: 10px; color: var(--text-muted); }
 .history-pagination button { background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; color: var(--text); font: inherit; cursor: pointer; }
 .history-pagination button:disabled { opacity: .45; cursor: default; }
-.branch-compare-entry { margin: 0 12px 10px; }
 .operation-banner { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); background: var(--bg-card); border-radius: 9px; padding: 12px 14px; margin: 0 0 16px; font-size: 12px; }
 .operation-banner > div:first-child { flex: 1; min-width: 0; }
 .operation-banner p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }

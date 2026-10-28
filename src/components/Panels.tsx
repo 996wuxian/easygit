@@ -8,7 +8,7 @@ export { DiffPanel } from './diff/DiffPanel';
 
 export { BranchesPanel } from './branches/BranchesPanel';
 
-export { CommitsPanel } from './commits/CommitsPanel';
+export { CommitsPanel, CommitSyncCounts } from './commits/CommitsPanel';
 export { ScriptsPanel } from './scripts/ScriptsPanel';
 
 export { StashPanel } from './stash/StashPanel';

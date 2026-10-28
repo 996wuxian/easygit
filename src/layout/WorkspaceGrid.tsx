@@ -61,7 +61,7 @@ export interface WorkspaceGridProps {
   onResize?: (id: PanelId, size: PanelSize | null) => void;
   renderPanel: (id: PanelId) => ReactNode;
   panelActions?: (id: PanelId) => ReactNode;
-  panelTitles?: Partial<Record<PanelId, string>>;
+  panelTitles?: Partial<Record<PanelId, ReactNode>>;
   className?: string;
 }
 

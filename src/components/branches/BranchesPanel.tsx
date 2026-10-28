@@ -1,6 +1,6 @@
 import { useEffect, useState, type DragEvent } from 'react';
 import { useOverflowTooltip } from '../OverflowTooltip';
-import { IconArrowRight, IconCloud, IconGitBranch, IconGitMerge } from '@tabler/icons-react';
+import { IconArrowRight, IconCloud, IconGitBranch, IconGitCompare, IconGitMerge } from '@tabler/icons-react';
 import type { BranchRequest, GitBranch, RepositorySnapshot } from '../../services/git';
 import { useBranchManagement } from './BranchManagement';
 import { recentBranchGroups } from './model';
@@ -62,8 +62,10 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
     onDrop: (event: DragEvent<HTMLElement>) => handleDrop(event, branch),
   });
   return <div className="branches-content">
-    <div className="branch-filter-note" role="status">{keyword ? '搜索结果 · 全部时间' : '近 6 个月'}<span>{keyword ? `${matches.length} 个匹配分支` : '按最后提交时间'}</span></div>
-    {onCompare && <button className="text-button branch-compare-entry" onClick={onCompare} disabled={snapshot.branches.length < 2}>对比分支代码</button>}
+    <div className="branch-filter-note">
+      {onCompare && <button type="button" className="secondary-button branch-compare-entry" onClick={onCompare} disabled={snapshot.branches.length < 2}><IconGitCompare size={14} aria-hidden="true" />对比分支代码</button>}
+      <span role="status" title={keyword ? '搜索结果包含全部时间的分支' : undefined}>{keyword ? `${matches.length} 个匹配分支` : '按最后提交时间'}</span>
+    </div>
     {onMergeRequest && <div className="branch-merge-hint"><IconGitMerge size={13} />拖动分支到目标分支即可预览合并，支持本地和远程分支</div>}
     {currentFiltered && <div className="branch-current-note" title={snapshot.branch}>当前：<code>{snapshot.branch}</code><span>{snapshot.head ? '不在近期列表中' : '尚无提交'}</span></div>}
     {(['local', 'remote'] as const).map(type => {

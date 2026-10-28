@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconArrowUp, IconCloud, IconGitBranch, IconHistory, IconFlag, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconChevronsDown, IconCloud, IconGitBranch, IconHistory, IconFlag, IconX } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
 import { buildCommitGraph, cherryPickReason, commitStatus } from './model';
 import { CommitContextMenu } from './CommitContextMenu';
@@ -16,6 +16,14 @@ export function CommitRefs({ commit }: { commit: GitCommit }) {
   return <span className="commit-refs">{commit.refs.map(ref => <span className={`commit-ref ${ref.remote ? 'remote' : 'local'}`} key={`${ref.name}-${ref.remote}`}>
     {ref.remote ? <IconCloud size={12} /> : <IconGitBranch size={12} />}<span>{ref.name}</span>
   </span>)}</span>;
+}
+
+export function CommitSyncCounts({ snapshot }: { snapshot: Pick<RepositorySnapshot, 'hasUpstream' | 'ahead' | 'behind'> }) {
+  if (!snapshot.hasUpstream) return null;
+  return <span className="commit-sync-counts" role="group" aria-label={`待推送 ${snapshot.ahead} 个提交，待拉取 ${snapshot.behind} 个提交`}>
+    <span aria-hidden="true" title={`待推送 ${snapshot.ahead} 个提交`}><IconArrowUp size={12} />{snapshot.ahead}</span>
+    <span aria-hidden="true" title={`待拉取 ${snapshot.behind} 个提交`}><IconArrowDown size={12} />{snapshot.behind}</span>
+  </span>;
 }
 
 export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onCherryPick }: {
@@ -38,10 +46,6 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onChe
   return <div className="commits-content">
     <div className="history-tools"><SelectMenu className="history-branch-select" label="历史分支" listLabel="选择历史分支" value={history.scope} onChange={history.setScope}
       options={[{ value: 'current', label: '当前分支与上游', icon: <IconHistory size={16} aria-hidden="true" /> }, ...snapshot.branches.map(branch => ({ value: branchKey(branch), label: `${branch.remote ? '远程' : '本地'} · ${branch.name}`, icon: branch.remote ? <IconCloud size={16} aria-hidden="true" /> : <IconGitBranch size={16} aria-hidden="true" /> }))]} /><input aria-label="搜索提交信息" placeholder="搜索提交信息…" value={history.search} onChange={event => history.setSearch(event.target.value)} maxLength={120} /></div>
-    {commits.length > 0 && <div className="history-summary">
-      <span>{snapshot.hasUpstream ? <><span title="本地领先上游，等待推送"><IconArrowUp size={12} />{snapshot.ahead}</span><span title="上游领先本地，等待拉取"><IconArrowDown size={12} />{snapshot.behind}</span></> : '本地历史'}</span>
-      <small title="远端跟踪分支保存在本机；点击获取更新可刷新远端位置">{snapshot.upstream ? '远端位置以上次获取为准' : '未设置上游分支'}</small>
-    </div>}
     {compareBase && <div className="history-compare-base" role="status" onMouseEnter={event => overflow.show(event.currentTarget, `${compareBase.hash}\n${compareBase.subject}`, 'strong', 'compare-base')} onMouseLeave={overflow.hide} aria-describedby={overflow.describedBy('compare-base')}>
       <IconFlag size={14} /><div><span>对比基准 · <code>{compareBase.shortHash}</code></span><strong>{compareBase.subject}</strong><small>右键另一条提交，选择“与基准提交对比”</small></div>
       <button className="icon-button" aria-label="清除对比基准" onClick={() => { overflow.hide(); setCompareBase(null); }}><IconX size={15} /></button>
@@ -71,12 +75,13 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onChe
           <span className="history-row-meta"><span className="history-author">{commit.author}</span><time dateTime={commit.date}>{new Date(commit.date).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time><span className={`commit-state ${status.kind}`}>{status.label}</span><code>{commit.shortHash}</code></span>
         </span>
       </button>;
-    })}</div>
+    })}
     {!history.paged && snapshot.head && !commits.some(commit => commit.hash === snapshot.head) && <div className="history-range-note">本地 {snapshot.branch} 的指向不在最近 10 条记录中</div>}
     {!history.paged && snapshot.upstream && !commits.some(commit => commit.hash === snapshot.upstream?.hash) && <div className="history-range-note">{snapshot.upstream.name} 的指向不在最近 10 条记录中</div>}
     {history.error && <div className="history-range-note error-color" role="alert">{history.error}<button className="text-button" onClick={history.refresh}>刷新历史</button></div>}
     {!commits.length && !history.loading && !history.error && <div className="clean-state"><IconHistory size={28} stroke={1.3} /><strong>{history.paged ? '没有匹配提交' : '暂无提交'}</strong><span>{history.paged ? '试试其他关键词或分支' : '创建第一次提交后可查看记录'}</span></div>}
-    <div className="history-pagination">{history.paged ? <><button aria-label="上一页提交" disabled={history.loading || history.offset === 0} onClick={history.previous}>上一页</button><span>{history.loading ? '正在读取…' : `第 ${Math.floor(history.offset / 25) + 1} 页`}</span><button aria-label="下一页提交" disabled={history.loading || history.nextOffset === null} onClick={history.next}>下一页</button><button onClick={history.refresh} disabled={history.loading}>刷新</button></> : commits.length >= 10 && <button onClick={history.expand}>更多历史</button>}</div>
+    </div>
+    <div className={`history-pagination${history.paged ? '' : ' history-pagination--more'}`}>{history.paged ? <><button aria-label="上一页提交" disabled={history.loading || history.offset === 0} onClick={history.previous}>上一页</button><span>{history.loading ? '正在读取…' : `第 ${Math.floor(history.offset / 25) + 1} 页`}</span><button aria-label="下一页提交" disabled={history.loading || history.nextOffset === null} onClick={history.next}>下一页</button><button onClick={history.refresh} disabled={history.loading}>刷新</button></> : commits.length >= 10 && <button type="button" className="history-more-link" onClick={history.expand}><span>更多历史</span><IconChevronsDown size={14} aria-hidden="true" /></button>}</div>
     {overflow.tooltip}
     {menu && <CommitContextMenu {...menu} snapshot={snapshot} busy={busy} onClose={() => setMenu(null)} onSelect={() => onSelect(menu.commit)} notify={notify}
       compareBase={compareBase} onMarkBase={() => setCompareBase(menu.commit)} onClearBase={() => setCompareBase(null)} onCompare={() => { if (compareBase) setComparison({ base: compareBase, target: menu.commit }); }}

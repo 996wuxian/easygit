@@ -115,7 +115,7 @@ body.eg-is-panel-resizing .eg-panel-resize-edge::after { transition: none; }
 .eg-panel-alignment-guide[data-axis='height'] { background: repeating-linear-gradient(to right, var(--eg-alignment-color) 0 4px, transparent 4px 8px); }
 .eg-panel--sized .project-files, .eg-panel--maximized .project-files { height: 100%; }
 .eg-panel-backdrop { position: fixed; inset: 48px 0 0; z-index: 799; background: #0006; }
-.eg-panel.eg-panel--maximized { position: fixed; inset: 60px 24px 24px; width: auto; z-index: 800; box-shadow: 0 12px 60px #0003; }
+.eg-panel.eg-panel--maximized { position: fixed; inset: 60px 24px 24px; align-self: stretch; width: auto; z-index: 800; box-shadow: 0 12px 60px #0003; }
 .eg-panel--maximized .activity-content { height: 100%; overflow: auto; }
 
 @media (max-width: 900px) {

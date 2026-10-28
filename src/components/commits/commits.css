@@ -1,9 +1,16 @@
 .commits-content, .commit-detail { --history-local: #4c87c9; --history-remote: #9670bf; }
-.commits-content { height: 100%; overflow-y: auto; padding: 0 12px 8px; }
-.history-summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 6px; background: var(--bg-card); border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 10px; }
-.history-summary > span, .history-summary > span > span { display: inline-flex; align-items: center; gap: 5px; }
-.history-summary > span { gap: 12px; }
-.history-summary small { font-size: 10px; color: var(--text-dim); }
+.commits-content { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; padding: 0 12px 4px; }
+.commits-content > :not(.history-list) { flex-shrink: 0; }
+.commits-content > .history-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.commits-content > .history-pagination:empty { display: none; }
+.commits-content > .history-pagination--more { padding: 2px 0 0; }
+.history-pagination--more > .history-more-link { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); font: inherit; line-height: 14px; }
+.history-pagination--more > .history-more-link:hover { color: var(--text); }
+.history-more-link > span { display: block; }
+.history-more-link > svg { display: block; }
+.eg-panel--commits .eg-panel-heading h2 { display: inline-flex; align-items: center; gap: 10px; }
+.commit-sync-counts { display: inline-flex; align-items: center; flex-shrink: 0; gap: 10px; color: var(--text-muted); font-size: 10px; font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.commit-sync-counts > span { display: inline-flex; align-items: center; gap: 4px; }
 .history-row { display: flex; align-items: center; width: 100%; height: 56px; gap: 6px; padding: 0 6px 0 0; border-radius: 5px; text-align: left; }
 .history-row:hover { background: var(--bg-soft); }
 .history-row.compare-base { background: color-mix(in srgb, var(--primary-soft) 70%, var(--bg-card)); border-radius: 6px; }

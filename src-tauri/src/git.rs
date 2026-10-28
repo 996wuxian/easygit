@@ -8,9 +8,9 @@ mod comparison;
 mod diff_blocks;
 pub use diff_blocks::{discard_diff_block, DiffBlock};
 mod conflicts;
+mod file_actions;
 mod file_search;
 mod files;
-mod file_actions;
 pub use file_actions::{
     copy_project_entry, delete_project_entry, project_entry_path, reveal_project_entry,
     DeletedProjectEntry,
