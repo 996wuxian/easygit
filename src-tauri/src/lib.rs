@@ -102,6 +102,30 @@ async fn read_project_file(path: String, file: String) -> Result<git::ProjectTex
 }
 
 #[tauri::command]
+async fn project_entry_path(path: String, file: String) -> Result<String, String> {
+    blocking(move || git::project_entry_path(&path, &file)).await
+}
+
+#[tauri::command]
+async fn reveal_project_entry(path: String, file: String) -> Result<(), String> {
+    blocking(move || git::reveal_project_entry(&path, &file)).await
+}
+
+#[tauri::command]
+async fn copy_project_entry(path: String, file: String) -> Result<(), String> {
+    blocking(move || git::copy_project_entry(&path, &file)).await
+}
+
+#[tauri::command]
+async fn delete_project_entry(
+    path: String,
+    file: String,
+    directory: bool,
+) -> Result<git::DeletedProjectEntry, String> {
+    blocking(move || git::delete_project_entry(&path, &file, directory)).await
+}
+
+#[tauri::command]
 async fn save_project_file(
     path: String,
     file: String,
@@ -479,6 +503,10 @@ pub fn run() {
             search_project_files,
             cancel_project_search,
             read_project_file,
+            project_entry_path,
+            reveal_project_entry,
+            copy_project_entry,
+            delete_project_entry,
             save_project_file,
             run_project_script,
             read_diff,

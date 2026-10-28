@@ -23,6 +23,26 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('内容搜索的文件行列定位', () => {
+  it('删除当前文件所在目录后清空编辑会话，不影响其他目录的文件', async () => {
+    await act(async () => editor.open('src/a.ts'));
+    await act(async () => editor.deleted(snapshot.path, 'src-other', true));
+    expect(editor.document?.file).toBe('src/a.ts');
+    await act(async () => editor.deleted(snapshot.path, 'src', true));
+    expect(editor.document).toBeNull();
+    expect(editor.dirty).toBe(false);
+  });
+
+  it('删除正在读取的文件后忽略迟到结果', async () => {
+    let finish!: (result: ProjectText) => void;
+    vi.mocked(project.readFile).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    let opening!: Promise<void>;
+    await act(async () => { opening = editor.open('src/a.ts'); });
+    await act(async () => editor.deleted(snapshot.path, 'src/a.ts', false));
+    await act(async () => { finish(text); await opening; });
+    expect(editor.document).toBeNull();
+    expect(editor.loading).toBe(false);
+  });
+
   it('首次打开携带行列，同一文件再次定位不重读也不重建编辑会话', async () => {
     await act(async () => editor.open('src/a.ts', { line: 2, column: 6, length: 3 }));
     const first = editor.document!;

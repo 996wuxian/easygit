@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { IconFileCode, IconLoader2 } from '@tabler/icons-react';
+import { IconFileCode, IconLoader2, IconPhoto } from '@tabler/icons-react';
 import type { FilePosition, FileSearchMatch, FileSearchMode } from '../../services/project';
 import { useProjectSearch } from './useProjectSearch';
+import { isImageFile } from './imagePreview';
 
 function Snippet({ result }: { result: FileSearchMatch }) {
   return <>{result.preview.slice(0, result.matchStart)}<mark>{result.preview.slice(result.matchStart, result.matchStart + result.matchLength)}</mark>{result.preview.slice(result.matchStart + result.matchLength)}</>;
 }
 
-export function ProjectSearchResults({ repository, query, mode, showIgnored, refreshKey, selected, viewport, onOpen }: {
+export function ProjectSearchResults({ repository, query, mode, showIgnored, refreshKey, selected, viewport, onOpen, onEntryMenu }: {
   repository: string; query: string; mode: FileSearchMode; showIgnored: boolean; refreshKey: string; selected?: string;
   viewport: RefObject<HTMLDivElement | null>; onOpen: (path: string, position?: FilePosition) => void;
+  onEntryMenu?: (file: string, x: number, y: number) => void;
 }) {
   const search = useProjectSearch(repository, query, mode, showIgnored, refreshKey);
   const [viewportState, setViewportState] = useState({ top: 0, height: 320 });
@@ -41,6 +43,12 @@ export function ProjectSearchResults({ repository, query, mode, showIgnored, ref
         <button className={`file-search-result${selected === result.path ? ' selected' : ''}`} aria-label={`打开匹配 ${result.path}${result.line ? ` 第 ${result.line} 行` : ''}`} title={`${result.path}${result.line ? `:${result.line}:${result.column}` : ''}\n${result.preview}`}
           tabIndex={activeRow >= start && activeRow < end ? activeRow === start + index ? 0 : -1 : index === 0 ? 0 : -1} onFocus={() => setActiveRow(start + index)}
           onKeyDown={event => {
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault(); event.stopPropagation();
+              const bounds = event.currentTarget.getBoundingClientRect();
+              onEntryMenu?.(result.path, bounds.left, bounds.bottom);
+              return;
+            }
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? search.results.length - 1 : Math.max(0, Math.min(search.results.length - 1, start + index + (event.key === 'ArrowDown' ? 1 : -1)));
@@ -52,8 +60,9 @@ export function ProjectSearchResults({ repository, query, mode, showIgnored, ref
             else if (top + rowHeight > element.scrollTop + height) element.scrollTop = top + rowHeight - height;
             focusTarget.current = next; setActiveRow(next); setViewportState({ top: element.scrollTop, height });
           }}
+          onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onEntryMenu?.(result.path, event.clientX, event.clientY); }}
           onClick={() => onOpen(result.path, result.line !== null && result.column !== null ? { line: result.line, column: result.column, length: result.length ?? 1 } : undefined)}>
-          <span className="file-search-name"><IconFileCode size={15} /><strong>{result.path.split('/').pop()}</strong>{result.line !== null && <small>{result.line}:{result.column}</small>}</span>
+          <span className="file-search-name">{isImageFile(result.path) ? <IconPhoto size={15} aria-hidden="true" /> : <IconFileCode size={15} aria-hidden="true" />}<strong>{result.path.split('/').pop()}</strong>{result.line !== null && <small>{result.line}:{result.column}</small>}</span>
           {mode === 'content' && <span className="file-search-snippet"><Snippet result={result} /></span>}
           <span className="file-search-path">{mode === 'name' ? <Snippet result={result} /> : result.path}</span>
         </button>

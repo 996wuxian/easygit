@@ -160,8 +160,12 @@ describe('项目脚本面板', () => {
     await act(async () => root.render(<App onReady={ready} />));
     await click('打开仓库 Alpha');
     const panel = host.querySelector('[data-eg-panel="scripts"]')!;
-    expect(panel.textContent).toContain('项目脚本');
+    expect(panel.querySelector('h2')?.textContent).toBe('项目脚本 · 3');
+    expect(panel.querySelector('.project-scripts-toolbar small')).toBeNull();
     expect(panel.querySelector('[aria-label="运行脚本 dev"]')).not.toBeNull();
+    vi.mocked(project.scripts).mockResolvedValueOnce({ ...info, scripts: info.scripts.slice(0, 1) });
+    await click('刷新项目脚本');
+    expect(panel.querySelector('h2')?.textContent).toBe('项目脚本 · 1');
     await act(async () => button('移动项目脚本面板').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true })));
     const saved = JSON.parse(localStorage.getItem('esaygit.workspace-layout.v1')!);
     expect(saved.order.indexOf('scripts')).toBeLessThan(saved.order.indexOf('stash'));

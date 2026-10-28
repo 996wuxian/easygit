@@ -10,6 +10,11 @@ pub use diff_blocks::{discard_diff_block, DiffBlock};
 mod conflicts;
 mod file_search;
 mod files;
+mod file_actions;
+pub use file_actions::{
+    copy_project_entry, delete_project_entry, project_entry_path, reveal_project_entry,
+    DeletedProjectEntry,
+};
 pub use file_search::{search_project_files, FileSearchBatch, FileSearchRequest, FileSearchState};
 pub use files::{
     list_project_files, read_project_file, save_project_file, ProjectListing, ProjectText,

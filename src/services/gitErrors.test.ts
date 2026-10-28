@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { formatCheckoutError, formatFetchError, gitErrorMessage } from './gitErrors';
+import { formatCheckoutError, formatFetchError, formatStageError, gitErrorMessage } from './gitErrors';
+
+describe('暂存失败的中文提示', () => {
+  it.each(["sites/easygit-launch/", "宣传站/项目 launch/", "site's launch/"])('解释未检出提交的嵌套仓库并保留路径：%s', path => {
+    const raw = `error: '${path}' does not have a commit checked out\nfatal: adding files failed`;
+    for (const error of [raw, new Error(raw)]) {
+      const message = formatStageError(error);
+      expect(message).toContain(`“${path}”是嵌套的 Git 仓库`);
+      expect(message).toContain('首次提交');
+      expect(message).toContain('.gitignore');
+      expect(message).not.toMatch(/does not have a commit|adding files failed/);
+    }
+  });
+
+  it('其他失败保留原始原因并加上暂存上下文', () => {
+    expect(formatStageError(new Error('文件路径无效。'))).toBe('暂存失败：文件路径无效。');
+  });
+});
 
 describe('远程更新失败的中文提示', () => {
   it('将实际连接失败错误转换为原因与处理建议，不在主提示中展示整段英文及仓库地址', () => {

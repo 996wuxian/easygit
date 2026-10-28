@@ -7,3 +7,6 @@ src-tauri/gen/
 *.tsbuildinfo
 .DS_Store
 .vscode/
+# 独立宣传站由自己的 Git 仓库管理
+/sites/easygit-launch/
+sites

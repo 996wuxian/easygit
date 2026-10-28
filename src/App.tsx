@@ -67,7 +67,14 @@ export default function App({ onReady }: { onReady: () => void }) {
   const panels = usePanelLayout();
   const { snapshot, hasRepository, busy, syncing, notify } = repo;
   const editor = useFileEditor(snapshot, repo.saveFile);
-  const filesRefreshKey = JSON.stringify([snapshot.head, snapshot.files.map(file => file.path)]);
+  const [fileTreeVersion, setFileTreeVersion] = useState(0);
+  const filesRefreshKey = JSON.stringify([snapshot.head, snapshot.files.map(file => file.path), fileTreeVersion]);
+  const deleteProjectEntry = async (file: string, directory: boolean) => {
+    const repository = snapshot.path;
+    const deleted = await repo.deleteProjectEntry(file, directory);
+    if (deleted) { editor.deleted(repository, file, directory); setFileTreeVersion(value => value + 1); }
+    return deleted;
+  };
   const openFile = (file: string, position?: FilePosition) => {
     if (snapshot.files.some(entry => entry.path === file && entry.conflicted)) void (async () => {
       if (!await confirmPendingChanges()) return;
@@ -84,6 +91,10 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [pickingDirectory, setPickingDirectory] = useState(false);
   const [branchName, setBranchName] = useState('');
   const [branchFilter, setBranchFilter] = useState({ path: '', query: '' });
+  const [scriptCount, setScriptCount] = useState<{ path: string; count: number | null } | null>(null);
+  const updateScriptCount = useCallback((path: string, count: number | null) => {
+    setScriptCount(current => current?.path === path && current.count === count ? current : { path, count });
+  }, []);
   const branchQuery = branchFilter.path === snapshot.path ? branchFilter.query : '';
   const [selected, setSelected] = useState<string | null>(snapshot.files[0]?.path ?? null);
   const [staged, setStaged] = useState(false);
@@ -408,8 +419,8 @@ export default function App({ onReady }: { onReady: () => void }) {
       }} />;
       case 'stash': return <StashPanel key={snapshot.path} snapshot={snapshot} busy={busy} onSave={repo.saveStash} onAction={repo.actOnStash} />;
       case 'activity': return <ActivityPanel activities={repo.activities} />;
-      case 'scripts': return <ScriptsPanel key={snapshot.path} snapshot={snapshot} notify={notify} />;
-      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} revision={snapshot.revision} selected={editor.document?.file} onOpen={openFile} />;
+      case 'scripts': return <ScriptsPanel key={snapshot.path} snapshot={snapshot} notify={notify} onCountChange={updateScriptCount} />;
+      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} revision={snapshot.revision} selected={editor.document?.file} onOpen={openFile} busy={busy} onDelete={deleteProjectEntry} notify={notify} />;
     }
   };
 
@@ -475,7 +486,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
         <div className="workspace-section-heading"><div><h2>更改与历史</h2><span className="section-subtitle">{panels.visiblePanels.length} 个面板</span></div><div><span className={`layout-saved ${panels.storageError ? 'save-error' : ''}`} title={panels.storageError ? '本次布局未保存' : '布局已保存'}><IconCheck size={12} /><span>{panels.storageError ? '未保存' : '已保存'}</span></span><button className="text-button" onClick={() => setModal('layout')}><IconLayoutGrid size={14} />布局</button></div></div>
 
-        <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
+        <WorkspaceGrid panelTitles={{ scripts: scriptCount?.path === snapshot.path && scriptCount.count !== null ? `项目脚本 · ${scriptCount.count}` : PANEL_TITLES.scripts }} layout={panels.layout} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
 
         <div className="workspace-footer"><span>{repo.gitVersion || snapshot.gitVersion}</span><span>拖动 <span className="footer-grip">⠿</span> 调整位置 · 拖动边框调整大小<span className="footer-divider">·</span><kbd>Ctrl K</kbd> 命令</span></div>
       </div> : <section className="repository-empty" aria-label="尚未打开仓库">
@@ -522,7 +533,7 @@ export default function App({ onReady }: { onReady: () => void }) {
     {modal === 'data-settings' && <DataStorageDialog onClose={closeModal} notify={notify} />}
     {modal === 'about' && <AboutDialog updates={updates} onClose={closeModal} />}
     {modal === 'project-notes' && hasRepository && <ProjectNotesDialog key={snapshot.path} path={snapshot.path} name={snapshot.name} onClose={closeModal} />}
-    {editor.visible && hasRepository && createPortal(<FileEditorDialog editor={editor} snapshot={snapshot} busy={busy} refreshKey={filesRefreshKey} onOpen={openFile} onResolveConflict={openFile} />, document.body)}
+    {editor.visible && hasRepository && createPortal(<FileEditorDialog editor={editor} snapshot={snapshot} busy={busy} refreshKey={filesRefreshKey} onOpen={openFile} onResolveConflict={openFile} onDelete={deleteProjectEntry} notify={notify} />, document.body)}
 
     {mergeRequest && <BranchMergeDialog key={`${snapshot.path}:${mergeRequest.sourceRemote}:${mergeRequest.source}:${mergeRequest.targetRemote}:${mergeRequest.target}`} path={snapshot.path} source={mergeRequest.source} sourceRemote={mergeRequest.sourceRemote} target={mergeRequest.target} targetRemote={mergeRequest.targetRemote} busy={busy} hasChanges={snapshot.files.length > 0} operation={snapshot.operation} onClose={() => setMergeRequest(null)} onConfirm={(preview: MergePreview) => repo.merge(preview)} onSelectCommit={commit => { setCommitDetailStatus(`待合并提交 · ${mergeRequest.source} → ${mergeRequest.target}`); setSelectedCommit(commit); }} />}
 

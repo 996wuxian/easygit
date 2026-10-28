@@ -4,7 +4,6 @@
 .project-scripts-toolbar > span { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; color: var(--text-muted); }
 .project-scripts-toolbar code { font-size: 11px; }
 .project-scripts-toolbar b { padding: 2px 6px; border-radius: 4px; background: var(--bg-card-hover); color: var(--text-muted); font: 10px var(--mono); }
-.project-scripts-toolbar small { color: var(--text-dim); font-size: 10px; }
 .project-scripts-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-content: start; flex: 1; min-height: 0; gap: 6px 10px; padding: 10px 12px; overflow: auto; }
 .project-script-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 52px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .project-script-row:hover { background: var(--bg-soft); }

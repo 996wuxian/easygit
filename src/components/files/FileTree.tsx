@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconChevronRight, IconFileCode, IconFolder, IconFolderOpen, IconLock, IconRefresh, IconSearch } from '@tabler/icons-react';
+import { IconChevronRight, IconFileCode, IconFolder, IconFolderOpen, IconLock, IconPhoto, IconRefresh, IconSearch } from '@tabler/icons-react';
 import type { GitFile } from '../../services/git';
 import { project, type FilePosition, type FileSearchMode, type ProjectEntry, type ProjectListing } from '../../services/project';
 import { ProjectSearchResults } from './ProjectSearchResults';
+import { isImageFile } from './imagePreview';
+import { useFileActions, type FileActionsProps } from './useFileActions';
 import './files.css';
 
-interface TreeProps {
+interface TreeProps extends FileActionsProps {
   repository: string; files: GitFile[]; refreshKey: string; selected?: string; revision?: string;
   onOpen: (file: string, position?: FilePosition) => void;
 }
-interface DirectoryProps extends TreeProps { directory: string; showIgnored: boolean; query?: string }
+interface DirectoryProps extends TreeProps { directory: string; showIgnored: boolean; query?: string; onEntryMenu?: (entry: ProjectEntry, x: number, y: number) => void }
 
 function Directory(props: DirectoryProps) {
   const { repository, directory, showIgnored, query = '', refreshKey } = props;
@@ -49,13 +51,21 @@ function Entry({ entry, ...props }: DirectoryProps & { entry: ProjectEntry }) {
   }, [entry.directory, entry.path, props.selected]);
   const status = props.files.find(file => file.path === entry.path);
   const label = status?.conflicted ? '冲突' : status?.untracked || status?.indexStatus === 'A' ? '新增' : status?.indexStatus === 'R' || status?.worktreeStatus === 'R' ? '重命名' : status ? '修改' : entry.ignored ? '忽略' : '';
-  const Icon = entry.blocked ? IconLock : entry.directory ? expanded ? IconFolderOpen : IconFolder : IconFileCode;
+  const Icon = entry.blocked ? IconLock : entry.directory ? expanded ? IconFolderOpen : IconFolder : isImageFile(entry.path) ? IconPhoto : IconFileCode;
   return <li>
     <button ref={row} className={`project-tree-row${props.selected === entry.path ? ' selected' : ''}${entry.ignored ? ' ignored' : ''}`}
       title={entry.blocked ? `${entry.path}：链接、子模块或特殊文件请在外部打开` : entry.path}
       aria-label={`${entry.directory ? '目录' : '打开文件'} ${entry.path}${label ? ` · ${label}` : ''}`}
       aria-expanded={entry.directory ? expanded : undefined} aria-current={props.selected === entry.path ? 'true' : undefined}
-      disabled={entry.blocked} onClick={() => entry.directory ? setExpanded(value => !value) : props.onOpen(entry.path)}>
+      disabled={entry.blocked} onClick={() => entry.directory ? setExpanded(value => !value) : props.onOpen(entry.path)}
+      onContextMenu={event => { event.preventDefault(); event.stopPropagation(); props.onEntryMenu?.(entry, event.clientX, event.clientY); }}
+      onKeyDown={event => {
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault(); event.stopPropagation();
+          const bounds = event.currentTarget.getBoundingClientRect();
+          props.onEntryMenu?.(entry, bounds.left, bounds.bottom);
+        }
+      }}>
       {entry.directory ? <IconChevronRight size={13} className={expanded ? 'expanded' : ''} /> : <span className="tree-indent" />}
       <Icon size={16} stroke={1.6} /><span className="tree-file-name">{props.query ? entry.path : entry.name}</span>
       {label && <small className={status?.conflicted ? 'error-color' : ''}>{label}</small>}
@@ -70,6 +80,7 @@ export function FileTree(props: TreeProps) {
   const [mode, setMode] = useState<FileSearchMode>('name');
   const [refresh, setRefresh] = useState(0);
   const viewport = useRef<HTMLDivElement>(null);
+  const actions = useFileActions(props.repository, props, () => setRefresh(value => value + 1));
   const refreshKey = `${props.refreshKey}:${refresh}`;
   return <nav className="project-files" aria-label="项目文件浏览">
     <div className="files-toolbar">
@@ -78,6 +89,8 @@ export function FileTree(props: TreeProps) {
       <button className="icon-button" aria-label="刷新项目文件" title="刷新目录与搜索结果" onClick={() => setRefresh(value => value + 1)}><IconRefresh size={16} /></button>
     </div>
     <div className="files-options"><label><input type="checkbox" checked={showIgnored} onChange={event => setShowIgnored(event.target.checked)} />显示忽略文件</label><span>{mode === 'content' ? '搜索磁盘内容' : '工作区文件'}</span></div>
-    <div ref={viewport} className="project-tree-scroll">{query.trim() ? <ProjectSearchResults repository={props.repository} query={query} mode={mode} showIgnored={showIgnored} refreshKey={`${refreshKey}:${mode === 'content' ? props.revision ?? '' : ''}`} selected={props.selected} viewport={viewport} onOpen={props.onOpen} /> : <Directory {...props} directory="" showIgnored={showIgnored} refreshKey={refreshKey} />}</div>
+    {actions.feedback}
+    <div ref={viewport} className="project-tree-scroll">{query.trim() ? <ProjectSearchResults repository={props.repository} query={query} mode={mode} showIgnored={showIgnored} refreshKey={`${refreshKey}:${mode === 'content' ? props.revision ?? '' : ''}`} selected={props.selected} viewport={viewport} onOpen={props.onOpen} onEntryMenu={(file, x, y) => actions.open({ path: file, directory: false }, x, y)} /> : <Directory {...props} directory="" showIgnored={showIgnored} refreshKey={refreshKey} onEntryMenu={actions.open} />}</div>
+    {actions.overlays}
   </nav>;
 }

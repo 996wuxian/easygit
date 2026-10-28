@@ -41,6 +41,29 @@ afterEach(async () => {
 describe('文件编辑与仓库操作协调', () => {
   const text: ProjectText = { content: 'saved\n', revision: 'saved-version', bom: false, lineEnding: 'lf', reason: null };
 
+  it('删除先经过未保存确认，取消后不调用磁盘操作', async () => {
+    const deletion = vi.spyOn(project, 'deleteEntry').mockResolvedValue({ snapshot: initial, refreshError: null });
+    const unregister = registerPendingChangesGuard(async () => false);
+    try {
+      await act(async () => { expect(await repository.deleteProjectEntry('notes.txt', false)).toBe(false); });
+      expect(deletion).not.toHaveBeenCalled();
+    } finally { unregister(); }
+    await act(async () => { expect(await repository.deleteProjectEntry('notes.txt', false)).toBe(true); });
+    expect(deletion).toHaveBeenCalledWith(initial.path, 'notes.txt', false);
+    expect(repository.notices.at(-1)?.message).toBe('已删除 notes.txt');
+  });
+
+  it('删除成功但 Git 刷新失败时仍报告已删除，失败时释放操作锁', async () => {
+    vi.spyOn(project, 'deleteEntry').mockResolvedValueOnce({ snapshot: null, refreshError: 'Git unavailable' })
+      .mockRejectedValueOnce(new Error('文件正在使用'));
+    await act(async () => { expect(await repository.deleteProjectEntry('folder', true)).toBe(true); });
+    expect(repository.notices.at(-1)?.message).toContain('已删除 folder');
+    expect(repository.notices.at(-1)?.message).toContain('Git 状态刷新失败');
+    await act(async () => { expect(await repository.deleteProjectEntry('folder', true)).toBe(false); });
+    expect(repository.busy).toBe(false);
+    expect(repository.activeOperation).toBeNull();
+  });
+
   it('取消未保存确认时不打开项目、不切换分支', async () => {
     const unregister = registerPendingChangesGuard(async () => false);
     const checkout = vi.spyOn(git, 'checkout');
@@ -84,6 +107,19 @@ describe('文件编辑与仓库操作协调', () => {
 });
 
 describe('仓库操作进度', () => {
+  it('嵌套仓库阻止全部暂存时显示中文，原始错误留在操作记录，失败后可重试', async () => {
+    const raw = "error: 'sites/easygit-launch/' does not have a commit checked out\nfatal: adding files failed";
+    vi.spyOn(git, 'stage').mockRejectedValueOnce(new Error(raw)).mockResolvedValue(initial);
+    await act(async () => { expect(await repository.stage(['src/App.tsx', 'sites/easygit-launch/'])).toBe(false); });
+    expect(repository.notices.at(-1)?.message).toContain('嵌套的 Git 仓库');
+    expect(repository.notices.at(-1)?.message).not.toContain('adding files failed');
+    expect(repository.activities[0]?.details).toBe(raw);
+    expect(repository.snapshot).toEqual(initial);
+    expect(repository.busy).toBe(false);
+    expect(repository.activeOperation).toBeNull();
+    await act(async () => { expect(await repository.stage(['src/App.tsx'])).toBe(true); });
+  });
+
   it('显示具体操作，串行操作不会覆盖状态，成功和失败后都清理', async () => {
     const staging = deferred();
     vi.spyOn(git, 'stage').mockReturnValue(staging.promise);

@@ -2,6 +2,15 @@ export function gitErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function formatStageError(error: unknown): string {
+  const message = gitErrorMessage(error);
+  const nestedRepository = message.match(/error:\s*['"]([^\r\n]+)['"] does not have a commit checked out/i);
+  if (nestedRepository) {
+    return `暂存失败：“${nestedRepository[1]}”是嵌套的 Git 仓库，尚未检出有效提交，无法加入当前仓库。请先在该目录中创建首次提交或检出已有提交；如果它应保持独立，请将该目录加入当前仓库的 .gitignore 后重试。`;
+  }
+  return `暂存失败：${message}`;
+}
+
 export function formatFetchError(error: unknown): string {
   const message = gitErrorMessage(error);
   const prefix = '获取远程更新失败：';

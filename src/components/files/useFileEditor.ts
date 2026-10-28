@@ -14,6 +14,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
   const saveAction = useRef(onSave);
   saveAction.current = onSave;
   const sequence = useRef(0);
+  const loadingFile = useRef<{ repository: string; file: string } | null>(null);
   const reveal = useRef(0);
   const pending = useRef<{ promise: Promise<boolean>; resolve: (value: boolean) => void } | null>(null);
   const pathRef = useRef(snapshot.path);
@@ -68,12 +69,13 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
     if (!force && doc?.file === file && doc.repository === repository) { update({ visible: true, ...(target ? { document: { ...doc, target } } : {}) }); return; }
     if (!await confirmLeave() || repository !== pathRef.current) return;
     const token = ++sequence.current;
+    loadingFile.current = { repository, file };
     update({ document: null, visible: true, loading: true, error: '', external: false });
     try {
       const original = await project.readFile(repository, file);
       if (token === sequence.current && repository === pathRef.current) update({ document: { repository, file, original, draft: original.content ?? '', key: token, target } });
     } catch (error) { if (token === sequence.current) update({ error: String(error) }); }
-    finally { if (token === sequence.current) update({ loading: false }); }
+    finally { if (token === sequence.current) { loadingFile.current = null; update({ loading: false }); } }
   }
 
   const handlers = useRef({ confirmLeave, save, load });
@@ -81,6 +83,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
   useEffect(() => registerPendingChangesGuard(() => handlers.current.confirmLeave(), dirty), []);
   useEffect(() => {
     sequence.current++;
+    loadingFile.current = null;
     pending.current?.resolve(false);
     pending.current = null;
     update(initial);
@@ -119,6 +122,15 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
     open: (file: string, position?: FilePosition) => load(file, false, position),
     reload: () => { const doc = current.current.document; if (doc) void load(doc.file, true); },
     close: async () => { if (await confirmLeave()) update({ visible: false }); },
+    deleted: (repository: string, file: string, directory: boolean) => {
+      const doc = current.current.document;
+      const affected = (entry: { repository: string; file: string } | null) => entry?.repository === repository && (entry.file === file || (directory && entry.file.startsWith(`${file}/`)));
+      if (affected(doc) || affected(loadingFile.current)) {
+        sequence.current++;
+        loadingFile.current = null;
+        update({ document: null, loading: false, error: '', external: false });
+      }
+    },
     change: (draft: string) => { const doc = current.current.document; if (doc && !current.current.saving) update({ document: { ...doc, draft } }); },
   };
 }

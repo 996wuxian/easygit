@@ -2,6 +2,7 @@ use super::{
     command, error_text, output_mode, run, snapshot, validate_files, with_repository, OutputMode,
     RepositorySnapshot,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -14,6 +15,7 @@ use std::{
 };
 
 pub(super) const MAX_BYTES: usize = 2 * 1024 * 1024;
+const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_ENTRIES: usize = 5000;
 
 #[derive(Debug, Serialize)]
@@ -41,6 +43,42 @@ pub struct ProjectText {
     pub bom: bool,
     pub line_ending: String,
     pub reason: Option<String>,
+    pub image: Option<ProjectImage>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectImage {
+    pub mime: String,
+    pub data_url: String,
+    pub size: usize,
+}
+
+fn image_mime(file: &str) -> Option<&'static str> {
+    match Path::new(file)
+        .extension()?
+        .to_str()?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" | "jfif" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        "avif" => Some("image/avif"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+fn image_preview(mime: &str, bytes: &[u8]) -> ProjectImage {
+    ProjectImage {
+        mime: mime.into(),
+        data_url: format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
+        size: bytes.len(),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -264,19 +302,33 @@ fn read_at(root: &Path, file: &str) -> Result<ProjectText, String> {
     if !target.is_file() {
         return Err("请选择普通文件。".into());
     }
+    let mime = image_mime(file);
+    let limit = if mime.is_some() {
+        MAX_IMAGE_BYTES
+    } else {
+        MAX_BYTES
+    };
     let mut bytes = Vec::new();
     fs::File::open(&target)
         .map_err(|error| error.to_string())?
-        .take(MAX_BYTES as u64 + 1)
+        .take(limit as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_BYTES {
+    if bytes.len() > limit {
         return Ok(ProjectText {
             content: None,
             revision: String::new(),
             bom: false,
             line_ending: "lf".into(),
-            reason: Some("文件超过 2 MiB，请使用外部编辑器。".into()),
+            reason: Some(
+                if mime.is_some() {
+                    "图片超过 10 MiB，请使用外部工具查看。"
+                } else {
+                    "文件超过 2 MiB，请使用外部编辑器。"
+                }
+                .into(),
+            ),
+            image: None,
         });
     }
     let revision = format!("{:x}", Sha256::digest(&bytes));
@@ -288,7 +340,15 @@ fn read_at(root: &Path, file: &str) -> Result<ProjectText, String> {
         bom,
         line_ending: "lf".into(),
         reason: None,
+        image: mime.map(|mime| image_preview(mime, &bytes)),
     };
+    if mime.is_some_and(|mime| mime != "image/svg+xml") {
+        return Ok(result);
+    }
+    if bytes.len() > MAX_BYTES {
+        result.reason = Some("SVG 超过 2 MiB，仅支持图片预览，请使用外部编辑器修改。".into());
+        return Ok(result);
+    }
     match text {
         Ok(text) if !text.contains('\0') => {
             let crlf = text.matches("\r\n").count();
@@ -375,6 +435,7 @@ pub fn save_project_file(
             bom: current.bom,
             line_ending: current.line_ending,
             reason: None,
+            image: image_mime(file).map(|mime| image_preview(mime, &bytes)),
         };
         let (snapshot, refresh_error) = match snapshot(root) {
             Ok(snapshot) => (Some(snapshot), None),
@@ -392,6 +453,87 @@ pub fn save_project_file(
 mod tests {
     use super::*;
     use crate::git::{create_commit, run_text, stage_files};
+
+    #[test]
+    fn images_are_returned_as_read_only_previews() {
+        let repository = crate::git::tests::repo();
+        let root = repository.path();
+        let path = root.to_str().unwrap();
+        let bytes = b"\x89PNG\r\n\x1a\n\0image bytes";
+        for (file, mime) in [
+            ("图片.PNG", "image/png"),
+            ("photo.jpg", "image/jpeg"),
+            ("photo.JPEG", "image/jpeg"),
+            ("photo.jfif", "image/jpeg"),
+            ("animated.gif", "image/gif"),
+            ("photo.webp", "image/webp"),
+            ("photo.bmp", "image/bmp"),
+            ("icon.ico", "image/x-icon"),
+            ("photo.avif", "image/avif"),
+        ] {
+            fs::write(root.join(file), bytes).unwrap();
+            let read = read_project_file(path, file).unwrap();
+            let image = read.image.unwrap();
+            assert_eq!(image.mime, mime);
+            assert_eq!(image.size, bytes.len());
+            assert_eq!(
+                image.data_url,
+                format!("data:{mime};base64,{}", STANDARD.encode(bytes))
+            );
+            assert!(read.content.is_none());
+            assert!(read.reason.is_none());
+            assert!(save_project_file(path, file, &read.revision, "text").is_err());
+            assert_eq!(fs::read(root.join(file)).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn svg_supports_preview_source_and_saving() {
+        let repository = crate::git::tests::repo();
+        let root = repository.path();
+        let path = root.to_str().unwrap();
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>图片</text></svg>";
+        fs::write(root.join("icon.svg"), svg).unwrap();
+        let read = read_project_file(path, "icon.svg").unwrap();
+        assert_eq!(read.content.as_deref(), Some(svg));
+        assert_eq!(read.image.unwrap().mime, "image/svg+xml");
+        let edited = svg.replace("图片", "修改");
+        let saved = save_project_file(path, "icon.svg", &read.revision, &edited).unwrap();
+        assert_eq!(saved.file.content.as_deref(), Some(edited.as_str()));
+        assert_eq!(
+            saved.file.image.unwrap().data_url,
+            format!(
+                "data:image/svg+xml;base64,{}",
+                STANDARD.encode(edited.as_bytes())
+            )
+        );
+        assert_eq!(fs::read_to_string(root.join("icon.svg")).unwrap(), edited);
+    }
+
+    #[test]
+    fn images_have_a_separate_bounded_read_limit() {
+        let repository = crate::git::tests::repo();
+        let root = repository.path();
+        let path = root.to_str().unwrap();
+        let bytes = vec![0; MAX_BYTES + 1];
+        fs::write(root.join("large.png"), &bytes).unwrap();
+        assert_eq!(
+            read_project_file(path, "large.png")
+                .unwrap()
+                .image
+                .unwrap()
+                .size,
+            bytes.len()
+        );
+        fs::write(root.join("large.svg"), &bytes).unwrap();
+        let svg = read_project_file(path, "large.svg").unwrap();
+        assert!(svg.image.is_some() && svg.content.is_none());
+        assert!(svg.reason.unwrap().contains("2 MiB"));
+        fs::write(root.join("large.png"), vec![0; MAX_IMAGE_BYTES + 1]).unwrap();
+        let read = read_project_file(path, "large.png").unwrap();
+        assert!(read.image.is_none() && read.content.is_none());
+        assert!(read.reason.unwrap().contains("10 MiB"));
+    }
 
     #[test]
     fn directories_are_lazy_sorted_and_ignored_files_are_optional() {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emptyRepository, git, isDesktop, type BranchRequest, type CommitAction, type ConflictResolution, type DiffBlock, type MergePreview, type RepositorySnapshot, type PullResult, type StashEntry, type StashAction, type OperationRequest } from './git';
 import { appStorage } from './storage';
-import { formatCheckoutError, formatFetchError, formatPullError, gitErrorMessage } from './gitErrors';
-import { project, type ProjectText } from './project';
+import { formatCheckoutError, formatFetchError, formatPullError, formatStageError, gitErrorMessage } from './gitErrors';
+import { project, type ProjectText, type DeletedProjectEntry } from './project';
 import { confirmPendingChanges } from './pendingChanges';
 
 export interface RecentRepository { name: string; path: string }
@@ -255,7 +255,12 @@ export function useRepository(onReady: () => void) {
       const result = typeof label === 'string' ? { message: label } : label(next);
       notify(result.message, result.error ?? false);
       return true;
-    } catch (error) { notify(formatError(error), true); return false; }
+    } catch (error) {
+      const message = formatError(error);
+      const raw = gitErrorMessage(error);
+      notify(message, true, message === raw || message === String(error) ? undefined : raw);
+      return false;
+    }
     finally { busyRef.current = false; setBusy(false); setActiveOperation(null); }
   }, [notify]);
 
@@ -285,7 +290,14 @@ export function useRepository(onReady: () => void) {
   const saveStash = (message: string, includeUntracked: boolean) => runOutcome('已保存 stash', path => git.saveStash(path, message, includeUntracked), { kind: 'stash', label: '正在保存 stash…' });
   const actOnStash = (entry: StashEntry, action: StashAction) => runOutcome(action === 'drop' ? '已删除 stash' : action === 'pop' ? '已恢复并删除 stash' : '已恢复 stash（保留记录）', path => git.actOnStash(path, entry, action), { kind: 'stash', label: action === 'drop' ? '正在删除 stash…' : '正在恢复 stash…' });
   const actOnOperation = (request: OperationRequest) => runOutcome(request.action === 'abort' ? '已取消当前 Git 操作' : request.action === 'skip' ? '已跳过当前提交' : '已继续当前 Git 操作', path => git.actOnOperation(path, request), { kind: 'operation', label: request.action === 'abort' ? '正在取消当前 Git 操作…' : request.action === 'skip' ? '正在跳过当前提交…' : '正在继续当前 Git 操作…' });
-  const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths), undefined, { kind: 'stage', label: `正在暂存 ${paths.length} 个文件…` });
+  const stage = (paths: string[]) => run('已暂存更改', path => git.stage(path, paths), formatStageError, { kind: 'stage', label: `正在暂存 ${paths.length} 个文件…` });
+  const deleteProjectEntry = async (file: string, directory: boolean) => {
+    let outcome: DeletedProjectEntry | undefined;
+    return run(() => ({ message: outcome?.refreshError ? `已删除 ${file}，Git 状态刷新失败：${outcome.refreshError}` : `已删除 ${file}`, error: Boolean(outcome?.refreshError) }), async path => {
+      outcome = await project.deleteEntry(path, file, directory);
+      return outcome.snapshot ?? snapshotRef.current;
+    }, gitErrorMessage, { kind: 'delete-file', label: `正在删除 ${file}…` });
+  };
   const unstage = (paths: string[]) => run('已取消暂存', path => git.unstage(path, paths), undefined, { kind: 'unstage', label: `正在取消暂存 ${paths.length} 个文件…` });
   const discard = (paths: string[]) => run(paths.length === 1 ? '已撤回更改' : '已撤回所选文件的未暂存更改', path => git.discard(path, paths), undefined, { kind: 'discard', label: `正在撤回 ${paths.length} 个文件的更改…` });
   const discardBlock = (file: string, block: DiffBlock) => run('已撤回所选变更块，其他更改已保留', path => git.discardBlock(path, file, block), undefined, { kind: 'discard', label: '正在撤回所选变更块…' });
@@ -377,5 +389,5 @@ export function useRepository(onReady: () => void) {
     return true;
   }, [notify]);
 
-  return { snapshot, recents, hasRepository, busy, activeOperation, refreshing, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
+  return { snapshot, recents, hasRepository, busy, activeOperation, refreshing, syncing: Boolean(remoteSync), notices, dismissNotice, activities, gitVersion, notify, open, refresh, saveFile, stage, deleteProjectEntry, unstage, discard, discardBlock, resolveConflict, commit, actOnCommit, cherryPick, checkout, createBranch, manageBranch, fetch, pull, push, merge, removeWorkspace, saveStash, actOnStash, actOnOperation };
 }

@@ -184,7 +184,7 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
       <div className={`eg-workspace-grid ${className}`} ref={gridRef}>
         {ids.map((id, index) => {
           const Icon = panelIcons[id];
-          const title = panelTitles?.[id] ?? PANEL_TITLES[id];
+          const title = PANEL_TITLES[id];
           const size = layout.sizes?.[id];
           const full = maximized === id;
           const style = { "--eg-panel-span": size?.span ?? panelSlotSpan(index, ids.length) } as CSSProperties;
@@ -202,7 +202,7 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
               <header className="eg-panel-header">
                 <div className="eg-panel-heading">
                   <Icon size={17} stroke={1.7} aria-hidden="true" />
-                  <h2 id={`eg-panel-heading-${id}`}>{title}</h2>
+                  <h2 id={`eg-panel-heading-${id}`}>{panelTitles?.[id] ?? title}</h2>
                 </div>
                 <div className="eg-panel-header-actions">
                   {panelActions?.(id)}
