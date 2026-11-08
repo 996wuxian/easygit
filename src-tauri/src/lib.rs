@@ -192,7 +192,11 @@ async fn read_diff(path: String, file: String, staged: bool) -> Result<String, S
 }
 
 #[tauri::command]
-async fn read_file_blame(path: String, file: String, staged: bool) -> Result<git::FileBlame, String> {
+async fn read_file_blame(
+    path: String,
+    file: String,
+    staged: bool,
+) -> Result<git::FileBlame, String> {
     blocking(move || git::read_file_blame(&path, &file, staged)).await
 }
 
