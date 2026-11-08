@@ -1,0 +1,20 @@
+.diff-line-blame {
+  position: fixed;
+  z-index: 1200;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 8px 24px #00000024;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  pointer-events: none;
+}
+.diff-line-blame strong { font-weight: 600; }
+.diff-line-blame-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.diff-line-blame time { color: var(--text-muted); font-size: 11px; }
+.diff-line-blame code { color: var(--text-muted); font: 11px var(--mono); }
+.diff-line-blame p { margin: 4px 0 0; color: var(--text-muted); }

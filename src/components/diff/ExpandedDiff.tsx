@@ -8,12 +8,14 @@ import { UnifiedDiff } from './UnifiedDiff';
 import { DiffFileNavigation } from './DiffNavigation';
 import { countDiffChanges } from './model';
 import { DiffFileActions, type DiffActions } from './DiffFileActions';
+import type { DiffBlame } from './LineBlame';
 import './diff.css';
 
 type ComparisonState = { key: string; status: 'loading' | 'ready' | 'refreshing' | 'error'; data?: FileComparison; error?: string };
 
-export function ExpandedDiff({ snapshot, selected, staged, compactDiff, compactHasResult = Boolean(compactDiff), compactLoading, compactError, onStagedChange, onSelectFile, onClose, notify, ...actions }: DiffActions & {
+export function ExpandedDiff({ snapshot, selected, staged, blame, compactDiff, compactHasResult = Boolean(compactDiff), compactLoading, compactError, onStagedChange, onSelectFile, onClose, notify, ...actions }: DiffActions & {
   snapshot: RepositorySnapshot; selected: string; staged: boolean;
+  blame?: DiffBlame;
   compactDiff: string; compactLoading: boolean; compactError: string;
   compactHasResult?: boolean;
   onStagedChange: (staged: boolean) => void; onSelectFile?: (path: string) => void;
@@ -81,8 +83,8 @@ export function ExpandedDiff({ snapshot, selected, staged, compactDiff, compactH
     <DiffFileActions {...actions} file={selectedFile} staged={staged} />
     <div className="expanded-diff-body" aria-busy={mode === 'split' ? loading : compactLoading}>
       {mode === 'unified' ? <div className={`code-scroll diff-code-scroll ${wrap ? 'wrap-code' : ''}`}>
-        {compactError && !compactHasResult ? <div className="diff-empty"><IconX size={24} /><span>{compactError}</span></div> : compactLoading && !compactHasResult ? <div className="diff-empty"><IconLoader2 className="spin" size={24} /><span>正在读取差异…</span></div> : compactDiff ? <UnifiedDiff interactive key={requestKey} diff={compactDiff} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(compactError)} /> : <div className="diff-empty"><span>当前分区没有差异</span></div>}
-      </div> : error && !comparison || comparison?.binary ? <div className="diff-empty"><IconFileCode size={28} /><span>{error || '二进制或非 UTF-8 文件无法进行源码比对。'}</span><button className="text-button" onClick={() => setMode('unified')}>查看统一差异视图</button></div> : !comparison ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取完整源码…</span></div> : <SplitDiff interactive key={requestKey} comparison={comparison} originalLabel={originalLabel} modifiedLabel={modifiedLabel} originalPath={originalPath} modifiedPath={selected} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(error)} />}
+        {compactError && !compactHasResult ? <div className="diff-empty"><IconX size={24} /><span>{compactError}</span></div> : compactLoading && !compactHasResult ? <div className="diff-empty"><IconLoader2 className="spin" size={24} /><span>正在读取差异…</span></div> : compactDiff ? <UnifiedDiff interactive key={requestKey} diff={compactDiff} blame={blame} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(compactError)} /> : <div className="diff-empty"><span>当前分区没有差异</span></div>}
+      </div> : error && !comparison || comparison?.binary ? <div className="diff-empty"><IconFileCode size={28} /><span>{error || '二进制或非 UTF-8 文件无法进行源码比对。'}</span><button className="text-button" onClick={() => setMode('unified')}>查看统一差异视图</button></div> : !comparison ? <div className="diff-empty"><IconLoader2 size={24} className="spin" /><span>正在读取完整源码…</span></div> : <SplitDiff interactive key={requestKey} comparison={comparison} blame={blame} originalLabel={originalLabel} modifiedLabel={modifiedLabel} originalPath={originalPath} modifiedPath={selected} onDiscardBlock={discardBlock} discardBlockDisabled={actions.busy || Boolean(error)} />}
     </div>
     <div className="diff-footer"><span>{refreshError ? <span className="diff-refresh-error" role="status" title={String(refreshError)}>刷新失败，显示上次差异</span> : mode === 'split' ? '完整源码 · 左右同步滚动' : '统一差异视图'}</span><span><kbd>Esc</kbd>退出全屏</span></div>
   </Dialog>;

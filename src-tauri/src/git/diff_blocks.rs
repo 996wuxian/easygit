@@ -323,6 +323,50 @@ mod tests {
     }
 
     #[test]
+    fn last_block_discard_clears_normalized_crlf_changes_but_preserves_staging() {
+        let file = "README.md";
+        let directory = setup(file, b"original\nsecond\n", None);
+        let root = directory.path();
+        let path = root.to_str().unwrap();
+        run(root, &["config", "core.autocrlf", "true"]).unwrap();
+
+        fs::write(root.join(file), b"edit\r\nsecond\r\n").unwrap();
+        let discarded =
+            discard_diff_block(path, file, &block(0, 0, &["original"], &["edit"])).unwrap();
+        assert!(discarded.files.is_empty());
+        assert!(super::super::open_repository(path)
+            .unwrap()
+            .files
+            .is_empty());
+        assert_eq!(
+            fs::read(root.join(file)).unwrap(),
+            b"original\r\nsecond\r\n"
+        );
+
+        // Stage a version with LF stat data, then edit a CRLF worktree copy.
+        fs::write(root.join(file), b"staged\nsecond\n").unwrap();
+        stage_files(path, &[file.to_owned()]).unwrap();
+        fs::write(root.join(file), b"new edit\r\nsecond\r\n").unwrap();
+        fs::write(root.join("draft.txt"), b"untracked\n").unwrap();
+        let discarded =
+            discard_diff_block(path, file, &block(0, 0, &["staged"], &["new edit"])).unwrap();
+        let readme = discarded
+            .files
+            .iter()
+            .find(|entry| entry.path == file)
+            .unwrap();
+        assert!(readme.staged && !readme.unstaged);
+        assert!(discarded
+            .files
+            .iter()
+            .any(|entry| entry.path == "draft.txt" && entry.untracked));
+        assert_eq!(
+            run(root, &["show", ":README.md"]).unwrap(),
+            b"staged\nsecond\n"
+        );
+    }
+
+    #[test]
     fn preserves_missing_final_newlines() {
         for (original, modified, old_missing, new_missing) in [
             (&b"old"[..], &b"new"[..], true, true),

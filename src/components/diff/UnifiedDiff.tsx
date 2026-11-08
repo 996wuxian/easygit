@@ -3,6 +3,7 @@ import { IconArrowBackUp } from '@tabler/icons-react';
 import type { DiffBlock } from '../../services/git';
 import { changeHighlightClass, DiffNavigation, DiffText, useDiffNavigation, type ChangeRange, type TextMatch } from './DiffNavigation';
 import { getDiffBlocks } from './model';
+import { blameAttributes, useLineBlame, type DiffBlame } from './LineBlame';
 import './large-diff.css';
 
 export const isCombinedDiff = (diff: string) => /^diff --(?:cc|combined) /m.test(diff) || /^@@@ /m.test(diff);
@@ -73,8 +74,9 @@ function parseRows(diff: string, showFileHeaders: boolean): DiffRow[] {
 
 // Text and controls remain mounted for native search, selection and keyboard
 // navigation. Only syntax tokenization is deferred for chunks outside view.
-const DiffChunk = memo(function DiffChunk({ rows, offset, query, current, currentChange, deferHighlight, onDiscardBlock, discardBlockDisabled }: {
+const DiffChunk = memo(function DiffChunk({ rows, offset, query, current, currentChange, deferHighlight, blame, onDiscardBlock, discardBlockDisabled }: {
   rows: DiffRow[]; deferHighlight: boolean; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled: boolean;
+  blame?: DiffBlame;
   offset: number; query: string; current?: TextMatch; currentChange?: ChangeRange;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -114,11 +116,12 @@ const DiffChunk = memo(function DiffChunk({ rows, offset, query, current, curren
     if (row.kind === 'heading') return <div className="patch-file-heading" data-diff-row={line} key={index}>{content}</div>;
     if (row.kind === 'hunk') return <div className="code-hunk" data-diff-row={line} key={index}><span>···</span><span>···</span><code>{content}</code></div>;
     const { block } = row;
-    return <div className={`code-line ${row.type}${changeHighlightClass(line, currentChange)}`} data-diff-row={line} key={index}><span className="line-number">{row.old}</span><span className="line-number">{row.next}</span><span className="line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${row.blockNumber}`} title="撤回该变更块，保留其他更改" disabled={discardBlockDisabled} onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</span><code>{content}</code></div>;
+    const commit = row.next !== '' ? blame?.modified?.(row.next, row.text) : row.old !== '' ? blame?.original?.(row.old, row.text) : undefined;
+    return <div className={`code-line ${row.type}${changeHighlightClass(line, currentChange)}`} data-diff-row={line} {...blameAttributes(commit)} key={index}><span className="line-number">{row.old}</span><span className="line-number">{row.next}</span><span className="line-sign">{block && onDiscardBlock ? <button className="diff-block-undo" aria-label={`撤回变更块 ${row.blockNumber}`} title="撤回该变更块，保留其他更改" disabled={discardBlockDisabled} onClick={() => onDiscardBlock(block)}><IconArrowBackUp size={14} /></button> : row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</span><code>{content}</code></div>;
   })}</div>;
 });
 
-export function UnifiedDiff({ diff, onDiscardBlock, discardBlockDisabled = false, showFileHeaders = false, interactive = false }: { diff: string; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean; showFileHeaders?: boolean; interactive?: boolean }) {
+export function UnifiedDiff({ diff, blame, onDiscardBlock, discardBlockDisabled = false, showFileHeaders = false, interactive = false }: { diff: string; blame?: DiffBlame; onDiscardBlock?: (block: DiffBlock) => void; discardBlockDisabled?: boolean; showFileHeaders?: boolean; interactive?: boolean }) {
   const view = useRef<HTMLDivElement>(null);
   const combined = isCombinedDiff(diff);
   const large = useMemo(() => !combined && exceedsLineLimit(diff), [combined, diff]);
@@ -155,13 +158,15 @@ export function UnifiedDiff({ diff, onDiscardBlock, discardBlockDisabled = false
     return groups;
   }, [rows]);
   const toolbar = interactive && <DiffNavigation navigation={navigation} />;
+  const lineBlame = (blame?.original || blame?.modified) && !diff.includes('\ndiff --git ') ? blame : undefined;
+  const attribution = useLineBlame(lineBlame, diff);
   const raw = <DiffText text={diff} query={navigation.query} currentStart={navigation.current?.start} highlight={false} />;
   if (combined) return <div ref={view} className="conflict-diff">{toolbar}<div className="conflict-diff-note">文件存在合并冲突。以下为原始差异，请在编辑器中解决冲突。</div><pre data-diff-row={0}>{raw}</pre></div>;
   if (!fullView) return <div ref={view} className={`large-diff${interactive ? ' diff-interactive-view' : ''}`}>{toolbar}
     <div className="large-diff-notice" role="status"><span>差异超过 10,000 行，当前显示完整原始文本。语法高亮{onDiscardBlock ? '和区块撤回' : ''}未启用。</span><button className="text-button" onClick={() => setFullViewRequested(true)}>加载完整视图</button><small>加载完整视图可能影响性能。</small></div>
     <pre className="large-diff-raw" data-diff-row={0} aria-label="完整差异文本">{raw}</pre>
   </div>;
-  return <div ref={view} className="diff-interactive-view" onKeyDown={event => {
+  return <div ref={view} className="diff-interactive-view" {...attribution.events} onKeyDown={event => {
     if (interactive && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); view.current?.querySelector<HTMLInputElement>('[aria-label="在差异中搜索"]')?.focus(); }
-  }}>{toolbar}<div className="code-lines">{chunks.map((rows, index) => <DiffChunk key={index} rows={rows} offset={index * CHUNK_SIZE} query={navigation.query} current={navigation.current} currentChange={currentChange} deferHighlight={chunks.length > 2 && index >= 2} onDiscardBlock={onDiscardBlock} discardBlockDisabled={discardBlockDisabled} />)}</div></div>;
+  }}>{toolbar}<div className="code-lines">{chunks.map((rows, index) => <DiffChunk key={index} rows={rows} offset={index * CHUNK_SIZE} query={navigation.query} current={navigation.current} currentChange={currentChange} deferHighlight={chunks.length > 2 && index >= 2} blame={lineBlame} onDiscardBlock={onDiscardBlock} discardBlockDisabled={discardBlockDisabled} />)}</div>{attribution.tooltip}</div>;
 }
