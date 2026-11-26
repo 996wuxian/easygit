@@ -47,7 +47,7 @@ export class FileBackedStorage {
   private savedRevision = 0;
   private writes: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private pendingApiKeyWaiter: { resolve: () => void; reject: (error: unknown) => void } | null = null;
+  private pendingApiKeyWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
 
   constructor(
     private readonly driver: StorageDriver,
@@ -108,51 +108,66 @@ export class FileBackedStorage {
     this.assertReady();
     if (this.apiKey === apiKey && this.savedApiKey === apiKey) return Promise.resolve();
     this.apiKey = apiKey;
-    this.revision++;
     if (this.debounceMs <= 0) {
-      return this.persist();
+      return new Promise<void>((resolve, reject) => {
+        void this.persist([{ resolve, reject }], true).catch(() => {});
+      });
     }
-    this.pendingApiKeyWaiter?.resolve();
     return new Promise<void>((resolve, reject) => {
-      this.pendingApiKeyWaiter = { resolve, reject };
+      this.pendingApiKeyWaiters.push({ resolve, reject });
       this.schedulePersist(false);
     });
   }
 
   private schedulePersist(reportOnError: boolean) {
     if (this.debounceMs <= 0) {
-      void this.persist().catch(error => {
-        if (reportOnError) this.reportError(error);
-      });
+      void this.persist([], reportOnError).catch(() => {});
       return;
     }
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
-      const waiter = this.pendingApiKeyWaiter;
-      this.pendingApiKeyWaiter = null;
-      void this.persist().then(
-        () => { waiter?.resolve(); },
-        error => {
-          if (waiter) waiter.reject(error);
-          else this.reportError(error);
-        },
-      );
+      const waiters = this.pendingApiKeyWaiters;
+      this.pendingApiKeyWaiters = [];
+      void this.persist(waiters, true).catch(() => {});
     }, this.debounceMs);
   }
 
-  private persist(): Promise<void> {
+  private persist(
+    apiKeyWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [],
+    reportDataError = false,
+  ): Promise<void> {
     const next = this.writes.catch(() => {}).then(async () => {
-      if (this.savedRevision === this.revision && this.savedApiKey === this.apiKey) return;
       const revision = this.revision;
       const values = { ...this.values };
       const apiKey = this.apiKey;
+      let apiKeyError: unknown = null;
       if (this.savedApiKey !== apiKey) {
-        await this.driver.writeApiKey(apiKey);
-        this.savedApiKey = apiKey;
+        try {
+          await this.driver.writeApiKey(apiKey);
+          this.savedApiKey = apiKey;
+          for (const waiter of apiKeyWaiters) waiter.resolve();
+        } catch (error) {
+          apiKeyError = error;
+          for (const waiter of apiKeyWaiters) waiter.reject(error);
+        }
+      } else {
+        for (const waiter of apiKeyWaiters) waiter.resolve();
       }
-      await this.driver.writeData(values);
-      this.savedRevision = revision;
+
+      let dataError: unknown = null;
+      if (this.savedRevision !== revision) {
+        try {
+          await this.driver.writeData(values);
+          this.savedRevision = revision;
+        } catch (error) {
+          dataError = error;
+          if (reportDataError) this.reportError(error);
+        }
+      }
+
+      if (apiKeyError !== null) throw apiKeyError;
+      if (dataError !== null) throw dataError;
     });
     this.writes = next;
     return next;
@@ -163,16 +178,17 @@ export class FileBackedStorage {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    const waiter = this.pendingApiKeyWaiter;
-    this.pendingApiKeyWaiter = null;
+    const waiters = this.pendingApiKeyWaiters;
+    this.pendingApiKeyWaiters = [];
     try {
       await this.writes.catch(() => {});
       if (this.savedRevision !== this.revision || this.savedApiKey !== this.apiKey) {
-        await this.persist();
+        await this.persist(waiters, false);
+      } else {
+        for (const waiter of waiters) waiter.resolve();
       }
-      waiter?.resolve();
     } catch (error) {
-      waiter?.reject(error);
+      for (const waiter of waiters) waiter.reject(error);
       throw error;
     }
   }

@@ -59,7 +59,7 @@ use std::{
     path::{Component, Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{Arc, Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Serialize)]
@@ -153,7 +153,9 @@ pub struct PullResult {
 }
 
 type RepoLocks = Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>;
+type RepoRootCache = Mutex<HashMap<PathBuf, Instant>>;
 static REPO_LOCKS: OnceLock<RepoLocks> = OnceLock::new();
+static REPO_ROOT_CACHE: OnceLock<RepoRootCache> = OnceLock::new();
 static GIT_VERSION: OnceLock<String> = OnceLock::new();
 #[cfg(test)]
 thread_local! {
@@ -293,11 +295,75 @@ pub(crate) fn repository_root(path: &str) -> Result<PathBuf, String> {
     if !input.is_dir() {
         return Err("仓库路径不存在，或不是一个文件夹。".to_owned());
     }
+    if let Ok(canonical_input) = input.canonicalize() {
+        let cached_fresh = REPO_ROOT_CACHE
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&canonical_input).copied())
+            .is_some_and(|stored_at| stored_at.elapsed() < Duration::from_secs(5));
+        if cached_fresh && canonical_input.join(".git").exists() {
+            return Ok(canonical_input);
+        }
+        let root = run_text(input, &["rev-parse", "--show-toplevel"])
+            .map_err(|error| format!("无法打开 Git 仓库：{error}"))?;
+        let canonical_root = PathBuf::from(root)
+            .canonicalize()
+            .map_err(|error| format!("无法访问仓库路径：{error}"))?;
+        if canonical_root == canonical_input && canonical_root.join(".git").exists() {
+            if let Ok(mut cache) = REPO_ROOT_CACHE
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+            {
+                if cache.len() >= 64 {
+                    cache.retain(|_, stored_at| stored_at.elapsed() < Duration::from_secs(5));
+                    if cache.len() >= 64 {
+                        cache.clear();
+                    }
+                }
+                cache.insert(canonical_input, Instant::now());
+            }
+        }
+        return Ok(canonical_root);
+    }
     let root = run_text(input, &["rev-parse", "--show-toplevel"])
         .map_err(|error| format!("无法打开 Git 仓库：{error}"))?;
     PathBuf::from(root)
         .canonicalize()
         .map_err(|error| format!("无法访问仓库路径：{error}"))
+}
+
+/// Fast single-file status lookup that avoids a full working-tree scan unless
+/// the file looks like a newly added/untracked entry that could be a rename target.
+pub(super) fn file_status(
+    root: &Path,
+    file: &str,
+    need_rename: bool,
+) -> Result<Option<GitFile>, String> {
+    let single = parse_status(&run(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            file,
+        ],
+    )?)?;
+    let entry = single.into_iter().find(|entry| entry.path == file);
+    let maybe_rename = need_rename
+        && entry
+            .as_ref()
+            .is_some_and(|item| item.index_status == "A" || item.worktree_status == "A");
+    if !maybe_rename {
+        return Ok(entry);
+    }
+    let full = parse_status(&run(
+        root,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )?)?;
+    Ok(full.into_iter().find(|item| item.path == file))
 }
 
 fn with_repository<T>(
@@ -682,12 +748,8 @@ pub fn open_repository_directory(path: &str) -> Result<(), String> {
 pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String> {
     validate_files(&[file.to_owned()])?;
     with_repository(path, |root| {
-        let status = parse_status(&run(
-            root,
-            &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        )?)?;
-        let selected = status.iter().find(|entry| entry.path == file);
-        if !staged && selected.is_some_and(|entry| entry.untracked) {
+        let selected = file_status(root, file, true)?;
+        if !staged && selected.as_ref().is_some_and(|entry| entry.untracked) {
             let null_file = if cfg!(windows) { "NUL" } else { "/dev/null" };
             let result = output_mode(
                 Some(root),
@@ -722,7 +784,10 @@ pub fn read_diff(path: &str, file: &str, staged: bool) -> Result<String, String>
             args.push("--cached");
         }
         args.extend(["--", file]);
-        if let Some(old_path) = selected.and_then(|entry| entry.old_path.as_deref()) {
+        if let Some(old_path) = selected
+            .as_ref()
+            .and_then(|entry| entry.old_path.as_deref())
+        {
             args.push(old_path);
         }
         let bytes = run_mode(root, &args, OutputMode::Bounded(DIFF_LIMIT))?;
@@ -1381,5 +1446,61 @@ mod tests {
         let snapshot = open_repository(worktree_path.to_str().unwrap()).unwrap();
         assert_eq!(snapshot.branch, "main");
         assert_eq!(snapshot.commits[0].subject, "initial");
+    }
+
+    fn count_git_commands<T>(action: impl FnOnce() -> T) -> (T, usize) {
+        let before = GIT_COMMAND_COUNT.with(|count| count.get());
+        let result = action();
+        let after = GIT_COMMAND_COUNT.with(|count| count.get());
+        (result, after.saturating_sub(before))
+    }
+
+    #[test]
+    fn repository_root_cache_handles_hits_subdirs_and_deleted_git_dir() {
+        let directory = repo();
+        let root = directory.path().canonicalize().unwrap();
+        let path = directory.path().to_str().unwrap();
+        let sub = directory.path().join("nested-dir");
+        fs::create_dir(&sub).unwrap();
+
+        let (first, first_calls) = count_git_commands(|| repository_root(path));
+        assert_eq!(first.unwrap(), root);
+        assert_eq!(first_calls, 1);
+
+        let (second, second_calls) = count_git_commands(|| repository_root(path));
+        assert_eq!(second.unwrap(), root);
+        assert_eq!(second_calls, 0);
+
+        assert_eq!(repository_root(sub.to_str().unwrap()).unwrap(), root);
+
+        fs::remove_dir_all(directory.path().join(".git")).unwrap();
+        assert!(repository_root(path).is_err());
+    }
+
+    #[test]
+    fn file_status_avoids_full_scan_for_untracked_and_recovers_renames() {
+        let directory = repo();
+        let root = directory.path();
+        let path = root.to_str().unwrap();
+        fs::write(root.join("untracked.txt"), "new file\n").unwrap();
+        let (entry, untracked_calls) =
+            count_git_commands(|| file_status(root, "untracked.txt", true));
+        let entry = entry.unwrap().expect("untracked entry");
+        assert!(entry.untracked);
+        assert_eq!(untracked_calls, 1);
+
+        fs::write(root.join("old.txt"), "line 1\nline 2\nline 3\nline 4\n").unwrap();
+        stage_files(path, &["old.txt".into()]).unwrap();
+        create_commit(path, "initial").unwrap();
+        run(root, &["mv", "old.txt", "new.txt"]).unwrap();
+
+        let renamed = file_status(root, "new.txt", true)
+            .unwrap()
+            .expect("renamed entry");
+        assert_eq!(renamed.index_status, "R");
+        assert_eq!(renamed.old_path.as_deref(), Some("old.txt"));
+        assert!(read_diff(path, "new.txt", true)
+            .unwrap()
+            .contains("rename from old.txt"));
     }
 }

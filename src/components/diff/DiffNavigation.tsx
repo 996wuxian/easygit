@@ -10,9 +10,19 @@ export function changeHighlightClass(row: number, range?: ChangeRange): string {
   return ` diff-change-current${row === range.start ? ' diff-change-start' : ''}${row === range.end - 1 ? ' diff-change-end' : ''}`;
 }
 const MATCH_LIMIT = 10_000;
+let cachedPatternQuery = '';
+let cachedPattern: RegExp | null = null;
+function searchPattern(query: string): RegExp {
+  if (query !== cachedPatternQuery || !cachedPattern) {
+    cachedPatternQuery = query;
+    cachedPattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  }
+  cachedPattern.lastIndex = 0;
+  return cachedPattern;
+}
 export function findTextMatches(lines: readonly string[], query: string): TextMatch[] {
   if (!query) return [];
-  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  const pattern = searchPattern(query);
   const matches: TextMatch[] = [];
   for (let line = 0; line < lines.length; line++) {
     pattern.lastIndex = 0;

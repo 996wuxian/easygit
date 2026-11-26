@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconFolder, IconFolderOpen, IconGitBranch, IconKey, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconFolder, IconFolderOpen, IconGitBranch, IconKey, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, CommitSyncCounts, StashPanel, ActivityPanel, ScriptsPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
 import { Dialog } from './components/Dialog';
+import { RepositoryBar } from './components/RepositoryBar';
 import { RepositoryDirectoryInput } from './components/RepositoryDirectoryInput';
 import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import { ConflictResolutionDialog } from './components/diff/ConflictResolutionDialog';
@@ -32,10 +33,10 @@ import { git, isDesktop, type DiffBlock, type GitCommit, type MergePreview } fro
 import { generateCommitMessage, parseGeneratedCommitMessage, type AiCommitSettings } from './services/ai';
 import { commitStatus } from './components/commits/model';
 import { useRepository, type RecentRepository } from './services/useRepository';
-import { AI_SETTINGS_KEY, COMMIT_DRAFTS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
+import { AI_SETTINGS_KEY, STORAGE_ERROR_EVENT, appStorage, readAiApiKey, saveAiApiKey } from './services/storage';
+import { removeCommitDraft, setCommitDraft, useCommitDraft } from './services/commitDrafts';
 
 type Modal = 'open' | 'clone' | 'init' | 'remotes' | 'layout' | 'commands' | 'settings' | 'ai-settings' | 'data-settings' | 'about' | 'branches' | 'create-branch' | 'project-notes' | null;
-type RepositoryPress = { path: string; pointerId: number; startX: number; startY: number; timer: number; started: boolean; targetPath: string | null; element: HTMLButtonElement };
 const SIDEBAR_ORDER_KEY = 'easygit.sidebar-repository-order.v1';
 const SIDEBAR_PANELS = ['changes', 'diff', 'branches', 'commits', 'files'] as const;
 const DEFAULT_AI_SETTINGS: AiCommitSettings = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: '' };
@@ -54,13 +55,12 @@ function readAiSettings(): AiCommitSettings {
     };
   } catch { return { ...DEFAULT_AI_SETTINGS, apiKey }; }
 }
-function readCommitDrafts(): Record<string, string> {
-  try {
-    const value: unknown = JSON.parse(appStorage.getItem(COMMIT_DRAFTS_KEY) ?? '{}');
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
-      : {};
-  } catch { return {}; }
+
+function ChangesPanelWithDraft({ onDraftError, ...props }: Omit<ComponentProps<typeof ChangesPanel>, 'message' | 'onMessageChange'> & {
+  onDraftError: (error: unknown) => void;
+}) {
+  const message = useCommitDraft(props.snapshot.path);
+  return <ChangesPanel {...props} message={message} onMessageChange={next => setCommitDraft(props.snapshot.path, next, onDraftError)} />;
 }
 
 export default function App({ onReady }: { onReady: () => void }) {
@@ -101,25 +101,19 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [selected, setSelected] = useState<string | null>(snapshot.files[0]?.path ?? null);
   const [staged, setStaged] = useState(false);
   const [query, setQuery] = useState('');
-  const [commitDrafts, setCommitDrafts] = useState(readCommitDrafts);
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
   const [commitDetailStatus, setCommitDetailStatus] = useState<string | null>(null);
   const [comparingBranches, setComparingBranches] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string; sourceRemote: boolean; targetRemote: boolean } | null>(null);
   const [activeNav, setActiveNav] = useState<PanelId>('changes');
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
-  const [repositoryTooltip, setRepositoryTooltip] = useState<{ name: string; path: string; left: number; top: number } | null>(null);
   const [sidebarOrder, setSidebarOrder] = useState(readSidebarOrder);
-  const [draggingRepository, setDraggingRepository] = useState<string | null>(null);
-  const [dropTargetRepository, setDropTargetRepository] = useState<string | null>(null);
-  const repositoryPress = useRef<RepositoryPress | null>(null);
-  const suppressRepositoryClick = useRef(false);
-  const repositoryListRef = useRef<HTMLDivElement>(null);
-  const [repositoryScroll, setRepositoryScroll] = useState({ canLeft: false, canRight: false });
   const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all' | 'selection'; overlay: boolean } | null>(null);
   const [conflictFile, setConflictFile] = useState<string | null>(null);
   const [blockDiscard, setBlockDiscard] = useState<{ file: string; block: DiffBlock } | null>(null);
   const closeModal = useCallback(() => { setModal(null); setQuery(''); }, []);
+  const openRepositoryModal = useCallback(() => { setModal('open'); }, []);
+  const handleDraftError = useCallback((error: unknown) => { notify(`提交草稿保存失败：${String(error)}`, true); }, [notify]);
   const requestBranchMerge = (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => { setModal(null); setMergeRequest({ source, target, sourceRemote, targetRemote }); };
   const workspaces = useMemo(() => {
     const available = hasRepository && !repo.recents.some(item => item.path === snapshot.path)
@@ -143,41 +137,6 @@ export default function App({ onReady }: { onReady: () => void }) {
     });
   }, [workspaces]);
 
-  const updateRepositoryScroll = useCallback(() => {
-    const list = repositoryListRef.current;
-    if (!list) return;
-    const next = { canLeft: list.scrollLeft > 1, canRight: list.scrollLeft + list.clientWidth < list.scrollWidth - 1 };
-    setRepositoryScroll(current => current.canLeft === next.canLeft && current.canRight === next.canRight ? current : next);
-  }, []);
-
-  function scrollRepositories(direction: -1 | 1) {
-    repositoryListRef.current?.scrollBy({ left: direction * 200, behavior: 'smooth' });
-  }
-
-  function startRepositoryPress(workspace: RecentRepository, event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0) return;
-    if (repositoryPress.current) window.clearTimeout(repositoryPress.current.timer);
-    const element = event.currentTarget;
-    const press: RepositoryPress = {
-      path: workspace.path,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      timer: 0,
-      started: false,
-      targetPath: workspace.path,
-      element,
-    };
-    repositoryPress.current = press;
-    press.timer = window.setTimeout(() => {
-      if (repositoryPress.current !== press) return;
-      press.started = true;
-      setDraggingRepository(press.path);
-      setDropTargetRepository(press.path);
-      try { press.element.setPointerCapture(press.pointerId); } catch { /* pointer may have been cancelled */ }
-    }, 360);
-  }
-
   useEffect(() => {
     if (!workspaces.length) return;
     setSidebarOrder(current => {
@@ -189,122 +148,14 @@ export default function App({ onReady }: { onReady: () => void }) {
     });
   }, [workspaces]);
 
-  useEffect(() => {
-    const list = repositoryListRef.current;
-    if (!list) return;
-    const onWheel = (event: WheelEvent) => {
-      if (list.scrollWidth <= list.clientWidth) return;
-      if (event.deltaY === 0 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
-      event.preventDefault();
-      list.scrollLeft += event.deltaY;
-      updateRepositoryScroll();
-    };
-    list.addEventListener('wheel', onWheel, { passive: false });
-    return () => list.removeEventListener('wheel', onWheel);
-  }, [updateRepositoryScroll]);
-
-  const ensureSelectedRepositoryVisible = useCallback(() => {
-    const list = repositoryListRef.current;
-    const entry = list?.querySelector<HTMLElement>('.repository-entry.selected');
-    if (!list || !entry || list.clientWidth <= 0) return;
-    const padding = 8;
-    const left = entry.offsetLeft;
-    const right = left + entry.offsetWidth;
-    const viewLeft = list.scrollLeft;
-    const viewRight = viewLeft + list.clientWidth;
-    if (left - padding < viewLeft) {
-      list.scrollLeft = Math.max(0, left - padding);
-    } else if (right + padding > viewRight) {
-      list.scrollLeft = Math.max(0, right + padding - list.clientWidth);
-    }
-    updateRepositoryScroll();
-  }, [updateRepositoryScroll]);
-
-  const hasRepositoryOverflow = repositoryScroll.canLeft || repositoryScroll.canRight;
-
-  useEffect(() => {
-    if (!snapshot.path) return;
-    ensureSelectedRepositoryVisible();
-    const frame = window.requestAnimationFrame(ensureSelectedRepositoryVisible);
-    return () => window.cancelAnimationFrame(frame);
-  }, [snapshot.path, workspaces, hasRepositoryOverflow, ensureSelectedRepositoryVisible]);
-
-  useEffect(() => {
-    updateRepositoryScroll();
-    const list = repositoryListRef.current;
-    const onResize = () => {
-      updateRepositoryScroll();
-      ensureSelectedRepositoryVisible();
-    };
-    if (list && typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(onResize);
-      observer.observe(list);
-      if (list.firstElementChild) observer.observe(list.firstElementChild);
-      return () => observer.disconnect();
-    }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [updateRepositoryScroll, ensureSelectedRepositoryVisible, workspaces.length]);
-
-  useEffect(() => {
-    const move = (event: PointerEvent) => {
-      const press = repositoryPress.current;
-      if (!press || event.pointerId !== press.pointerId) return;
-      if (!press.started) {
-        if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 8) {
-          window.clearTimeout(press.timer);
-          repositoryPress.current = null;
-        }
-        return;
-      }
-      const entry = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-repository-path]');
-      press.targetPath = entry?.dataset.repositoryPath ?? null;
-      setDropTargetRepository(press.targetPath);
-      event.preventDefault();
-    };
-    const finish = (event: PointerEvent, cancelled = false) => {
-      const press = repositoryPress.current;
-      if (!press || event.pointerId !== press.pointerId) return;
-      window.clearTimeout(press.timer);
-      repositoryPress.current = null;
-      if (press.started && !cancelled) {
-        suppressRepositoryClick.current = true;
-        if (press.targetPath) moveWorkspace(press.path, press.targetPath);
-        window.setTimeout(() => { suppressRepositoryClick.current = false; }, 0);
-      }
-      setDraggingRepository(null);
-      setDropTargetRepository(null);
-    };
-    const up = (event: PointerEvent) => finish(event);
-    const cancel = (event: PointerEvent) => finish(event, true);
-    document.addEventListener('pointermove', move, { passive: false });
-    document.addEventListener('pointerup', up);
-    document.addEventListener('pointercancel', cancel);
-    return () => {
-      document.removeEventListener('pointermove', move);
-      document.removeEventListener('pointerup', up);
-      document.removeEventListener('pointercancel', cancel);
-      if (repositoryPress.current) window.clearTimeout(repositoryPress.current.timer);
-    };
-  }, [moveWorkspace]);
-
-  function requestRemoval(workspace: RecentRepository) {
+  const requestRemoval = useCallback((workspace: RecentRepository, returnToOpen = false) => {
     if (busy) return;
-    setRemoval({ workspace, returnToOpen: modal === 'open' });
+    setRemoval({ workspace, returnToOpen });
     setSelectedCommit(null);
     setComparingBranches(false);
     closeModal();
-  }
+  }, [busy, closeModal]);
 
-  function showRepositoryTooltip(workspace: RecentRepository, target: HTMLButtonElement) {
-    const rect = target.getBoundingClientRect();
-    setRepositoryTooltip({
-      name: workspace.name,
-      path: workspace.path,
-      left: Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - 272)),
-      top: rect.bottom + 8,
-    });
-  }
   function cancelRemoval() {
     if (removal?.returnToOpen) setModal('open');
     setRemoval(null);
@@ -312,11 +163,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   async function confirmRemoval() {
     if (removal?.workspace.path === snapshot.path && !await confirmPendingChanges()) return;
     if (!removal || !repo.removeWorkspace(removal.workspace)) return;
-    setCommitDrafts(current => {
-      const next = { ...current };
-      delete next[removal.workspace.path];
-      return next;
-    });
+    removeCommitDraft(removal.workspace.path, handleDraftError);
     if (snapshot.path === removal.workspace.path) {
       setSelected(null);
       setStaged(false);
@@ -354,7 +201,7 @@ export default function App({ onReady }: { onReady: () => void }) {
       const diff = await git.stagedDiff(repositoryPath);
       const result = await generateCommitMessage(aiSettings, diff);
       const message = parseGeneratedCommitMessage(result);
-      setCommitDrafts(current => ({ ...current, [repositoryPath]: message }));
+      setCommitDraft(repositoryPath, message, handleDraftError);
       notify('已生成提交信息');
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), true);
@@ -375,11 +222,6 @@ export default function App({ onReady }: { onReady: () => void }) {
       void saveAiApiKey(aiSettings.apiKey).catch(error => notify(`密钥保存失败：${String(error)}`, true));
     } catch (error) { notify(`AI 设置保存失败：${String(error)}`, true); }
   }, [aiSettings, notify]);
-
-  useEffect(() => {
-    try { appStorage.setItem(COMMIT_DRAFTS_KEY, JSON.stringify(commitDrafts)); }
-    catch (error) { notify(`提交草稿保存失败：${String(error)}`, true); }
-  }, [commitDrafts, notify]);
 
   useEffect(() => {
     const onStorageError = (event: Event) => notify(String((event as CustomEvent<unknown>).detail), true);
@@ -433,12 +275,12 @@ export default function App({ onReady }: { onReady: () => void }) {
     { id: 'files', icon: IconFolder, title: '浏览项目文件', detail: '查看目录和编辑工作区文件', shortcut: '', run: () => { closeModal(); focusPanel('files'); } },
   ].filter(action => hasRepository || !['refresh', 'branches', 'files', 'remotes'].includes(action.id)), [theme, snapshot.branch, hasRepository, repo.refresh, closeModal, panels.layout]);
 
-  async function openPath(value = path) {
+  const openRepositoryPath = useCallback(async (value: string) => {
     if (await repo.open(value)) {
       setPath(''); closeModal(); setActiveNav('changes');
       setSelectedCommit(null); setCommitDetailStatus(null); setComparingBranches(false); setMergeRequest(null);
     }
-  }
+  }, [repo.open, closeModal]);
   async function openProjectDirectory() {
     if (!snapshot.path) return;
     try { await git.openDirectory(snapshot.path); }
@@ -451,13 +293,13 @@ export default function App({ onReady }: { onReady: () => void }) {
   const pushTitle = !snapshot.remote ? '请先配置远程仓库' : !snapshot.head ? '请先创建提交' : snapshot.branch.startsWith('detached@') ? '游离 HEAD 状态无法推送' : snapshot.hasUpstream && !snapshot.ahead ? '没有待推送的提交' : snapshot.hasUpstream ? `推送当前分支（${snapshot.ahead} 个待推送提交）` : '首次推送并设置上游分支';
   const renderPanel = (id: PanelId) => {
     switch (id) {
-      case 'changes': return <ChangesPanel key={snapshot.path} snapshot={snapshot} message={commitDrafts[snapshot.path] ?? ''} onMessageChange={message => setCommitDrafts(current => ({ ...current, [snapshot.path]: message }))} selected={selected} selectedStaged={staged} busy={busy} activeOperation={repo.activeOperation} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onResolveConflict={setConflictFile} onCommit={repo.commit} />;
+      case 'changes': return <ChangesPanelWithDraft key={snapshot.path} snapshot={snapshot} onDraftError={handleDraftError} selected={selected} selectedStaged={staged} busy={busy} activeOperation={repo.activeOperation} generatingCommitMessage={generatingCommitMessage} onGenerateCommitMessage={() => { void generateStagedCommitMessage(); }} canPush={canPush} pushTitle={pushTitle} onPush={() => { void repo.push(); }} onSelect={(file, cached) => { setSelected(file); setStaged(cached); }} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope)} onResolveConflict={setConflictFile} onCommit={repo.commit} />;
       case 'diff': return <DiffPanel snapshot={snapshot} selected={selected} staged={staged} onStagedChange={setStaged} onSelectFile={setSelected} notify={notify} busy={busy} onStage={paths => { void repo.stage(paths); }} onUnstage={paths => { void repo.unstage(paths); }} onDiscard={(paths, scope) => requestDiscard(paths, scope, true)} onResolveConflict={setConflictFile} onDiscardBlock={requestBlockDiscard} />;
       case 'branches': return <BranchesPanel onBranchAction={repo.manageBranch} notify={repo.notify} searchQuery={branchQuery} snapshot={snapshot} busy={busy} mergeDisabled={mergeDisabled} onCompare={() => setComparingBranches(true)} onMergeRequest={requestBranchMerge} onCheckout={(name, remote) => { void repo.checkout(name, remote); }} />;
       case 'commits': return <CommitsPanel key={snapshot.path} snapshot={snapshot} onSelect={commit => { setCommitDetailStatus(null); setSelectedCommit(commit); }} busy={busy} notify={notify} onCherryPick={(commit, head, branch) => repo.cherryPick(snapshot.path, commit.hash, head, branch)} onAction={async (commit, head, branch, action) => {
         const path = snapshot.path;
         const success = await repo.actOnCommit(commit.hash, head, branch, action);
-        if (success && action !== 'revert') setCommitDrafts(current => ({ ...current, [path]: commit.subject }));
+        if (success && action !== 'revert') setCommitDraft(path, commit.subject, handleDraftError);
         if (!success) await repo.refresh(true);
         return success;
       }} />;
@@ -495,23 +337,8 @@ export default function App({ onReady }: { onReady: () => void }) {
       <div className="sidebar-bottom"><button className="rail-button" title="自定义布局" aria-label="自定义布局" onClick={() => setModal('layout')}><IconLayoutGrid size={20} /></button><button className="rail-button" title={theme === 'light' ? '切换深色主题' : '切换浅色主题'} aria-label={theme === 'light' ? '切换深色主题' : '切换浅色主题'} onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <IconMoon size={20} /> : <IconSun size={20} />}</button><button className="rail-button" title="偏好设置" aria-label="偏好设置" onClick={() => setModal('settings')}><IconSettings size={20} /></button></div>
     </aside>
 
-    {repositoryTooltip && createPortal(<div id="repository-tooltip" className="repository-tooltip" role="tooltip" style={{ left: repositoryTooltip.left, top: repositoryTooltip.top }}><strong>{repositoryTooltip.name}</strong><small>{repositoryTooltip.path}</small></div>, document.body)}
-
     <div className="workspace-pane">
-      <div className="repository-navigation" aria-label="仓库列表">
-        {(repositoryScroll.canLeft || repositoryScroll.canRight) && <button className="repository-scroll-button" title="向左滚动仓库列表" aria-label="向左滚动仓库列表" disabled={!repositoryScroll.canLeft} onClick={() => scrollRepositories(-1)}><IconChevronLeft size={15} /></button>}
-        <div className="repository-list-scroll" ref={repositoryListRef} onScroll={updateRepositoryScroll}>
-          <div className="repository-list">
-            {workspaces.length === 0 && <span className="repository-empty-hint">暂无打开过的项目</span>}
-            {workspaces.map(item => <div className={`repository-entry ${snapshot.path === item.path ? 'selected' : ''} ${draggingRepository === item.path ? 'dragging' : ''} ${dropTargetRepository === item.path && draggingRepository !== item.path ? 'drag-over' : ''}`} data-repository-path={item.path} key={item.path}>
-              <button className={`repository-item ${snapshot.path === item.path ? 'selected' : ''}`} aria-label={`打开仓库 ${item.name}`} aria-current={snapshot.path === item.path ? 'page' : undefined} aria-describedby={repositoryTooltip?.path === item.path ? 'repository-tooltip' : undefined} disabled={busy} onPointerDown={event => startRepositoryPress(item, event)} onContextMenu={event => event.preventDefault()} onMouseEnter={event => showRepositoryTooltip(item, event.currentTarget)} onMouseLeave={() => setRepositoryTooltip(null)} onFocus={event => showRepositoryTooltip(item, event.currentTarget)} onBlur={() => setRepositoryTooltip(null)} onClick={event => { if (suppressRepositoryClick.current) { event.preventDefault(); suppressRepositoryClick.current = false; return; } void openPath(item.path); }}><span className="repository-item-initial" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><span className="repository-item-name">{item.name}</span></button>
-              <button className="repository-remove" aria-label={`移除工作区 ${item.name}`} title="从 easygit 移除工作区" disabled={busy} onClick={() => requestRemoval(item)}><IconX size={12} /></button>
-            </div>)}
-          </div>
-        </div>
-        {(repositoryScroll.canLeft || repositoryScroll.canRight) && <button className="repository-scroll-button" title="向右滚动仓库列表" aria-label="向右滚动仓库列表" disabled={!repositoryScroll.canRight} onClick={() => scrollRepositories(1)}><IconChevronRight size={15} /></button>}
-        <button className="repository-add-button" title="打开本地仓库 · Ctrl O" aria-label="打开本地仓库" onClick={() => setModal('open')}><IconPlus size={16} /></button>
-      </div>
+      <RepositoryBar workspaces={workspaces} selectedPath={snapshot.path} busy={busy} onOpen={openRepositoryPath} onRemove={requestRemoval} onAdd={openRepositoryModal} onMove={moveWorkspace} />
       <main className="main-scroll">
       <div className="workspace-topbar"><div className="topbar-left"><button className="repository-switcher" title="切换仓库" aria-label="切换仓库" onClick={() => setModal('open')}><IconFolder size={19} /><strong>{snapshot.name || '选择仓库'}</strong><IconChevronDown size={13} /></button>{hasRepository && <span role="status" className={`workspace-status ${snapshot.files.length ? 'has-changes' : ''}`}><span className="tiny-dot" /><span className="workspace-status-label">{repo.activeOperation?.label ?? (repo.refreshing ? '正在刷新仓库状态…' : snapshot.operation ? snapshot.operation : snapshot.files.length ? '有未提交更改' : '工作区干净')}</span></span>}</div><div className="topbar-tools"><button className="topbar-search" onClick={() => setModal('commands')}><IconSearch size={16} /><span>搜索命令或操作</span><kbd>Ctrl K</kbd></button><button className="primary-button open-repo-button" aria-label="打开项目所在文件夹" title={snapshot.path ? `打开项目所在文件夹：${snapshot.path}` : '请先打开一个项目'} disabled={!hasRepository} onClick={() => { void openProjectDirectory(); }}><IconFolderOpen size={16} />打开项目所在文件夹</button></div></div>
       {hasRepository ? <div className="workspace-body">
@@ -533,12 +360,12 @@ export default function App({ onReady }: { onReady: () => void }) {
         <p>选择本地 Git 项目以开始。</p>
         <button className="primary-button" disabled={busy} onClick={() => setModal('open')}><IconPlus size={16} />打开仓库<kbd>Ctrl O</kbd></button>
         <div className="repository-entry-actions"><button className="secondary-button" disabled={busy} onClick={() => setModal('clone')}><IconArrowDown size={16} />克隆仓库</button><button className="secondary-button" disabled={busy} onClick={() => setModal('init')}><IconGitBranch size={16} />初始化仓库</button></div>
-        {repo.recents.length > 0 && <div className="empty-recent-list"><span>最近打开</span>{repo.recents.map(item => <button key={item.path} disabled={busy || !isDesktop()} title={item.path} onClick={() => { void openPath(item.path); }}><IconFolder size={16} /><strong>{item.name}</strong><small>{item.path}</small><IconChevronRight size={14} /></button>)}</div>}
+        {repo.recents.length > 0 && <div className="empty-recent-list"><span>最近打开</span>{repo.recents.map(item => <button key={item.path} disabled={busy || !isDesktop()} title={item.path} onClick={() => { void openRepositoryPath(item.path); }}><IconFolder size={16} /><strong>{item.name}</strong><small>{item.path}</small><IconChevronRight size={14} /></button>)}</div>}
       </section>}
       </main>
     </div>
 
-    {modal === 'open' && <Dialog title="打开一个 Git 仓库" onClose={() => { if (!pickingDirectory && !busy) closeModal(); }} className="open-repo-dialog"><div className="open-repo-intro"><span className="dialog-feature-icon"><IconFolderOpen size={26} stroke={1.5} /></span><p>打开本地 Git 项目目录。<br /><strong>支持普通仓库和 worktree。</strong></p></div><form onSubmit={event => { event.preventDefault(); if (!pickingDirectory) void openPath(); }}><label className="field-label" htmlFor="repo-path">仓库目录</label><RepositoryDirectoryInput value={path} onChange={setPath} defaultPath={snapshot.path} busy={busy} onPendingChange={setPickingDirectory} notify={notify} /><p className="field-help">选择或填写包含 .git 的项目目录，也支持 Git worktree。</p>{!isDesktop() && <div className="preview-note">打开本地仓库需要运行 easygit 桌面版。</div>}<button className="primary-button dialog-submit" type="submit" disabled={!path.trim() || busy || pickingDirectory || !isDesktop()}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconFolderOpen size={16} />}打开仓库</button></form><div className="repository-entry-actions"><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('clone')}><IconArrowDown size={16} />克隆仓库</button><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('init')}><IconGitBranch size={16} />初始化仓库</button></div>{workspaces.length > 0 && <><div className="dialog-section-label">最近打开</div><div className="recent-dialog-list">{workspaces.map(item => <div className="recent-dialog-row" key={item.path}><button disabled={busy} onClick={() => { void openPath(item.path); }}><IconFolder size={19} /><span><strong>{item.name}</strong><small>{item.path}</small></span><IconChevronRight size={16} /></button><button className="icon-button" title="从 easygit 移除工作区" aria-label={`移除工作区 ${item.name}`} disabled={busy} onClick={() => requestRemoval(item)}><IconX size={14} /></button></div>)}</div></>}</Dialog>}
+    {modal === 'open' && <Dialog title="打开一个 Git 仓库" onClose={() => { if (!pickingDirectory && !busy) closeModal(); }} className="open-repo-dialog"><div className="open-repo-intro"><span className="dialog-feature-icon"><IconFolderOpen size={26} stroke={1.5} /></span><p>打开本地 Git 项目目录。<br /><strong>支持普通仓库和 worktree。</strong></p></div><form onSubmit={event => { event.preventDefault(); if (!pickingDirectory) void openRepositoryPath(path); }}><label className="field-label" htmlFor="repo-path">仓库目录</label><RepositoryDirectoryInput value={path} onChange={setPath} defaultPath={snapshot.path} busy={busy} onPendingChange={setPickingDirectory} notify={notify} /><p className="field-help">选择或填写包含 .git 的项目目录，也支持 Git worktree。</p>{!isDesktop() && <div className="preview-note">打开本地仓库需要运行 easygit 桌面版。</div>}<button className="primary-button dialog-submit" type="submit" disabled={!path.trim() || busy || pickingDirectory || !isDesktop()}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconFolderOpen size={16} />}打开仓库</button></form><div className="repository-entry-actions"><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('clone')}><IconArrowDown size={16} />克隆仓库</button><button className="secondary-button" disabled={busy || pickingDirectory} onClick={() => setModal('init')}><IconGitBranch size={16} />初始化仓库</button></div>{workspaces.length > 0 && <><div className="dialog-section-label">最近打开</div><div className="recent-dialog-list">{workspaces.map(item => <div className="recent-dialog-row" key={item.path}><button disabled={busy} onClick={() => { void openRepositoryPath(item.path); }}><IconFolder size={19} /><span><strong>{item.name}</strong><small>{item.path}</small></span><IconChevronRight size={16} /></button><button className="icon-button" title="从 easygit 移除工作区" aria-label={`移除工作区 ${item.name}`} disabled={busy} onClick={() => requestRemoval(item, true)}><IconX size={14} /></button></div>)}</div></>}</Dialog>}
 
     {modal === 'create-branch' && <Dialog title="创建本地分支" onClose={closeModal} className="create-branch-dialog"><form onSubmit={event => { event.preventDefault(); const name = branchName.trim(); if (!name) return; void repo.createBranch(name).then(success => { if (success) { setBranchName(''); closeModal(); } }); }}><p className="dialog-description">从 <code>{snapshot.branch || '当前提交'}</code> 创建并切换到新分支。</p><label className="field-label" htmlFor="new-branch-name">新分支名称</label><input id="new-branch-name" className="text-field mono" value={branchName} onChange={event => setBranchName(event.target.value)} placeholder="例如 feature/login" autoFocus spellCheck={false} /><p className="field-help">输入新的本地分支名，不能与现有分支重名。</p><div className="dialog-action-row"><button className="text-button" type="button" disabled={busy} onClick={closeModal}>取消</button><button className="primary-button" type="submit" disabled={!branchName.trim() || busy}>{busy ? <IconLoader2 size={16} className="spin" /> : <IconGitBranch size={16} />}创建并切换</button></div></form></Dialog>}
 

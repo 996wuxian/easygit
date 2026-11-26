@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconArrowDown, IconArrowUp, IconChevronsDown, IconCloud, IconGitBranch, IconHistory, IconFlag, IconX } from '@tabler/icons-react';
 import type { CommitAction, GitCommit, RepositorySnapshot } from '../../services/git';
@@ -11,6 +11,15 @@ import { SelectMenu } from '../SelectMenu';
 import { useOverflowTooltip } from '../OverflowTooltip';
 import './commits.css';
 import '../diff/inspection.css';
+
+const commitDateTimeFormat = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hour12: false });
+const commitShortDateFormat = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' });
+
+function formatCommitDate(value: string): { full: string; short: string } {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { full: value, short: value };
+  return { full: commitDateTimeFormat.format(date), short: commitShortDateFormat.format(date) };
+}
 
 export function CommitRefs({ commit }: { commit: GitCommit }) {
   return <span className="commit-refs">{commit.refs.map(ref => <span className={`commit-ref ${ref.remote ? 'remote' : 'local'}`} key={`${ref.name}-${ref.remote}`}>
@@ -42,7 +51,7 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onChe
   useEffect(() => setMenu(null), [snapshot.path, snapshot.head]);
   const history = useCommitHistory(snapshot);
   const commits = history.commits;
-  const graph = buildCommitGraph(commits);
+  const graph = useMemo(() => buildCommitGraph(commits), [commits]);
   return <div className="commits-content">
     <div className="history-tools"><SelectMenu className="history-branch-select" label="历史分支" listLabel="选择历史分支" value={history.scope} onChange={history.setScope}
       options={[{ value: 'current', label: '当前分支与上游', icon: <IconHistory size={16} aria-hidden="true" /> }, ...snapshot.branches.map(branch => ({ value: branchKey(branch), label: `${branch.remote ? '远程' : '本地'} · ${branch.name}`, icon: branch.remote ? <IconCloud size={16} aria-hidden="true" /> : <IconGitBranch size={16} aria-hidden="true" /> }))]} /><input aria-label="搜索提交信息" placeholder="搜索提交信息…" value={history.search} onChange={event => history.setSearch(event.target.value)} maxLength={120} /></div>
@@ -52,7 +61,8 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onChe
     </div>}
     <div className="history-list">{commits.map((commit, index) => {
       const status = commitStatus(commit, snapshot.hasUpstream);
-      const detail = `${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString('zh-CN')}\n${status.label} · ${commit.hash}${commit.refs.length ? `\n${commit.refs.map(ref => `${ref.remote ? '远程' : '本地'}：${ref.name}`).join('\n')}` : ''}`;
+      const formattedDate = formatCommitDate(commit.date);
+      const detail = `${commit.subject}\n${commit.author} · ${formattedDate.full}\n${status.label} · ${commit.hash}${commit.refs.length ? `\n${commit.refs.map(ref => `${ref.remote ? '远程' : '本地'}：${ref.name}`).join('\n')}` : ''}`;
       const showTooltip = (row: HTMLButtonElement) => overflow.show(row, detail, '.history-row-title > strong, .history-author, .commit-ref > span', commit.hash);
       return <button className={`history-row ${status.kind}${compareBase?.hash === commit.hash ? ' compare-base' : ''}`} key={commit.hash} onClick={() => { overflow.hide(); onSelect(commit); }}
         aria-describedby={overflow.describedBy(commit.hash)}
@@ -72,7 +82,7 @@ export function CommitsPanel({ snapshot, onSelect, busy, onAction, notify, onChe
           <circle cx={12 + graph.rows[index].column * 12} cy={28} r={commit.refs.length ? 5 : 3.5} className={commit.refs.length ? 'tip' : ''} />
         </svg>
         <span className="history-row-content"><span className="history-row-title"><strong>{commit.subject}</strong><CommitRefs commit={commit} /></span>
-          <span className="history-row-meta"><span className="history-author">{commit.author}</span><time dateTime={commit.date}>{new Date(commit.date).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time><span className={`commit-state ${status.kind}`}>{status.label}</span><code>{commit.shortHash}</code></span>
+          <span className="history-row-meta"><span className="history-author">{commit.author}</span><time dateTime={commit.date}>{formattedDate.short}</time><span className={`commit-state ${status.kind}`}>{status.label}</span><code>{commit.shortHash}</code></span>
         </span>
       </button>;
     })}

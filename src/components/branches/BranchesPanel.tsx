@@ -6,6 +6,15 @@ import { useBranchManagement } from './BranchManagement';
 import { recentBranchGroups } from './model';
 import './branches.css';
 
+const branchDateTimeFormat = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hour12: false });
+const branchShortDateFormat = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' });
+
+function parseValidDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, mergeDisabled = false, onCompare, searchQuery = '', onBranchAction, notify }: {
   snapshot: RepositorySnapshot; busy: boolean; onCheckout: (name: string, remote: boolean) => void;
   onMergeRequest?: (source: string, target: string, sourceRemote: boolean, targetRemote: boolean) => void; mergeDisabled?: boolean;
@@ -73,8 +82,8 @@ export function BranchesPanel({ snapshot, busy, onCheckout, onMergeRequest, merg
       return <section className="branch-group" aria-label={type === 'local' ? '本地分支' : '远程分支'} key={type}>
       <div className="branch-group-heading">{type === 'local' ? <IconGitBranch size={13} /> : <IconCloud size={13} />}<span>{type === 'local' ? '本地分支' : '远程分支'}</span><b>{branches.length}</b></div>
       {branches.map(branch => {
-        const date = branch.lastCommitDate ? new Date(branch.lastCommitDate) : null;
-        const content = <>{branch.remote ? <IconCloud size={16} /> : <IconGitBranch size={16} />}<span className="branch-name">{branch.name}</span>{date && <time dateTime={branch.lastCommitDate!} title={`最后提交：${date.toLocaleString('zh-CN')}`}>{date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</time>}{branch.current ? <span className="current-badge">当前</span> : <IconArrowRight size={14} className="branch-arrow" />}</>;
+        const date = parseValidDate(branch.lastCommitDate);
+        const content = <>{branch.remote ? <IconCloud size={16} /> : <IconGitBranch size={16} />}<span className="branch-name">{branch.name}</span>{date && <time dateTime={branch.lastCommitDate!} title={`最后提交：${branchDateTimeFormat.format(date)}`}>{branchShortDateFormat.format(date)}</time>}{branch.current ? <span className="current-badge">当前</span> : <IconArrowRight size={14} className="branch-arrow" />}</>;
         return <button
             className={`branch-row ${branch.remote ? 'remote' : ''} ${branch.current ? 'current' : ''} ${sameBranch(mergeTarget, branch) ? 'merge-target' : ''} ${sameBranch(dragSource, branch) ? 'merge-source' : ''}`}
             key={branch.name}

@@ -172,4 +172,44 @@ describe('file-backed application storage', () => {
     expect(dataWrites).toBe(2);
     expect(driver.data!['esaygit.theme']).toBe('dark');
   });
+
+  it('keeps earlier debounced setApiKey promises pending until disk write completes or fails', async () => {
+    const driver = new MemoryFileDriver();
+    const storage = new FileBackedStorage(driver, new MemoryLegacyStorage(), () => {}, 30);
+    await storage.initialize();
+    driver.failKey = true;
+
+    let firstSettled = false;
+    const first = storage.setApiKey('sk-first').then(
+      () => { firstSettled = true; return 'resolved'; },
+      (error: unknown) => { firstSettled = true; return `rejected:${String(error)}`; },
+    );
+    const second = storage.setApiKey('sk-second').then(
+      () => 'resolved',
+      (error: unknown) => `rejected:${String(error)}`,
+    );
+
+    await Promise.resolve();
+    expect(firstSettled).toBe(false);
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toContain('rejected:Error: key protection unavailable');
+    expect(secondResult).toContain('rejected:Error: key protection unavailable');
+  });
+
+  it('separates writeData failures from setApiKey resolution during a debounced batch', async () => {
+    const driver = new MemoryFileDriver();
+    const errors: unknown[] = [];
+    const storage = new FileBackedStorage(driver, new MemoryLegacyStorage(), error => errors.push(error), 20);
+    await storage.initialize();
+    driver.failData = true;
+
+    storage.setItem(AI_SETTINGS_KEY, JSON.stringify({ baseUrl: 'https://api.example.test', model: 'm' }));
+    await expect(storage.setApiKey('sk-good')).resolves.toBeUndefined();
+    await new Promise(resolve => setTimeout(resolve, 40));
+
+    expect(driver.apiKey).toBe('sk-good');
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toContain('disk unavailable');
+  });
 });

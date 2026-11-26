@@ -1,6 +1,6 @@
 use super::{
     command, error_text,
-    files::{safe_path, MAX_BYTES},
+    files::{safe_path, validate_verified_child, MAX_BYTES},
 };
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
     time::{Duration, Instant},
 };
@@ -21,6 +21,7 @@ const RESULT_LIMIT: usize = 1000;
 const PER_FILE_LIMIT: usize = 20;
 const LIST_LIMIT: usize = 32 * 1024 * 1024;
 const SESSION_LIMIT: usize = 16;
+const MAX_VERIFIED_DIRS: usize = 4096;
 const CANCELLED: &str = "搜索已取消。";
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -297,6 +298,11 @@ impl SearchCursor {
     fn next_batch(&mut self, cancelled: &AtomicBool) -> Result<FileSearchBatch, String> {
         let started = Instant::now();
         let mut results = Vec::new();
+        // Scope verified parent-directory cache to a single ~40ms batch to bound
+        // memory and avoid stale directory entries across continuation pages.
+        let mut initial_dirs = HashMap::new();
+        initial_dirs.insert(String::new(), Some(self.root.clone()));
+        let verified_dirs = RwLock::new(initial_dirs);
         loop {
             check_cancelled(cancelled)?;
             while results.len() < PAGE_SIZE && self.found < RESULT_LIMIT {
@@ -318,9 +324,11 @@ impl SearchCursor {
                     cancelled,
                     started,
                     (PAGE_SIZE - results.len()).min(RESULT_LIMIT - self.found),
+                    &verified_dirs,
                 )?;
             } else {
-                let outcome = self.scan_file(&self.files[self.next_file], cancelled)?;
+                let outcome =
+                    self.scan_file(&self.files[self.next_file], cancelled, &verified_dirs)?;
                 self.next_file += 1;
                 self.accept(outcome);
             }
@@ -349,6 +357,7 @@ impl SearchCursor {
         cancelled: &AtomicBool,
         started: Instant,
         needed: usize,
+        verified_dirs: &RwLock<HashMap<String, Option<PathBuf>>>,
     ) -> Result<(), String> {
         // Limit IO concurrency and keep a deterministic result order. Every
         // worker retains the same per-file path, size and cancellation checks.
@@ -374,7 +383,8 @@ impl SearchCursor {
                         if index >= cursor.files.len() {
                             break;
                         }
-                        let outcome = cursor.scan_file(&cursor.files[index], cancelled)?;
+                        let outcome =
+                            cursor.scan_file(&cursor.files[index], cancelled, verified_dirs)?;
                         produced.fetch_add(outcome.matches.len(), Ordering::Relaxed);
                         outcomes.push((index, outcome));
                     }
@@ -395,19 +405,53 @@ impl SearchCursor {
         Ok(())
     }
 
-    fn scan_file(&self, file: &str, cancelled: &AtomicBool) -> Result<ScanOutcome, String> {
+    fn resolve_safe_file(
+        &self,
+        file: &str,
+        verified_dirs: &RwLock<HashMap<String, Option<PathBuf>>>,
+    ) -> Option<(PathBuf, fs::Metadata)> {
+        let (parent_rel, name) = match file.rsplit_once('/') {
+            Some((dir, name)) => (dir, name),
+            None => ("", file),
+        };
+        let parent_dir = {
+            let cached = verified_dirs
+                .read()
+                .ok()
+                .and_then(|cache| cache.get(parent_rel).cloned());
+            match cached {
+                Some(entry) => entry?,
+                None => {
+                    let verified = safe_path(&self.root, parent_rel, true).ok();
+                    if let Ok(mut cache) = verified_dirs.write() {
+                        if cache.len() < MAX_VERIFIED_DIRS {
+                            cache.insert(parent_rel.to_owned(), verified.clone());
+                        }
+                    }
+                    verified?
+                }
+            }
+        };
+        let target = parent_dir.join(name);
+        let metadata = fs::symlink_metadata(&target).ok()?;
+        if !validate_verified_child(&parent_dir, name, &metadata) || !metadata.is_file() {
+            return None;
+        }
+        Some((target, metadata))
+    }
+
+    fn scan_file(
+        &self,
+        file: &str,
+        cancelled: &AtomicBool,
+        verified_dirs: &RwLock<HashMap<String, Option<PathBuf>>>,
+    ) -> Result<ScanOutcome, String> {
         if self.request.mode == FileSearchMode::Name && !self.pattern.is_match(file) {
             return Ok(ScanOutcome::default());
         }
-        let Ok(target) = safe_path(&self.root, file, false) else {
+        let Some((target, metadata)) = self.resolve_safe_file(file, verified_dirs) else {
             return Ok(ScanOutcome::skipped());
         };
-        let Ok(metadata) = fs::metadata(&target) else {
-            return Ok(ScanOutcome::skipped());
-        };
-        if !metadata.is_file() {
-            return Ok(ScanOutcome::skipped());
-        }
         if self.request.mode == FileSearchMode::Name {
             let found = self.pattern.find(file).expect("path already matched");
             let (preview, match_start, match_length) = preview(file, found.start(), found.end());

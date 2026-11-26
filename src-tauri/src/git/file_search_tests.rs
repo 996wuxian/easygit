@@ -249,3 +249,32 @@ fn profile_large_project_search() {
         start.elapsed().as_millis()
     );
 }
+
+#[test]
+fn continuation_revalidates_directories_across_batches() {
+    let repository = crate::git::tests::repo();
+    let root = repository.path();
+    let shared = root.join("shared");
+    fs::create_dir(&shared).unwrap();
+    for index in 0..60 {
+        fs::write(
+            shared.join(format!("item-{index:02}.txt")),
+            "needle-token\n",
+        )
+        .unwrap();
+    }
+
+    let state = FileSearchState::default();
+    let mut query = request(root, "item-", FileSearchMode::Name);
+    let first = search_project_files(&state, query.clone()).unwrap();
+    assert_eq!(first.results.len(), 50);
+    assert!(!first.complete);
+
+    // Turn the directory into a nested repository before the next page.
+    fs::write(shared.join(".git"), "gitdir: somewhere").unwrap();
+    query.continuation = true;
+    let second = search_project_files(&state, query).unwrap();
+    assert!(second.results.is_empty());
+    assert!(second.complete);
+    assert!(second.skipped_files >= 10);
+}

@@ -101,6 +101,33 @@ fn reparse(metadata: &fs::Metadata) -> bool {
     }
 }
 
+pub(super) fn validate_entry_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.contains(['/', '\\']) {
+        return Err("文件路径无效。".into());
+    }
+    match Path::new(name).components().collect::<Vec<_>>().as_slice() {
+        [Component::Normal(component)] if *component == std::ffi::OsStr::new(name) => {}
+        _ => return Err("文件路径无效。".into()),
+    }
+    if name.eq_ignore_ascii_case(".git") || name.contains(':') || name.ends_with(['.', ' ']) {
+        return Err("不能访问 Git 管理文件或特殊文件路径。".into());
+    }
+    Ok(())
+}
+
+/// Validates a direct child under an already-verified `parent` directory without
+/// re-canonicalizing every ancestor component on each entry.
+pub(super) fn validate_verified_child(parent: &Path, name: &str, metadata: &fs::Metadata) -> bool {
+    if validate_entry_name(name).is_err() || reparse(metadata) {
+        return false;
+    }
+    if metadata.is_dir() {
+        !parent.join(name).join(".git").exists()
+    } else {
+        metadata.is_file()
+    }
+}
+
 // Validate every component before following a directory. This also protects
 // worktree .git files, Windows junctions, alternate streams and nested repos.
 pub(super) fn safe_path(root: &Path, relative: &str, allow_root: bool) -> Result<PathBuf, String> {
@@ -114,9 +141,7 @@ pub(super) fn safe_path(root: &Path, relative: &str, allow_root: bool) -> Result
             return Err("文件路径无效。".into());
         };
         let text = name.to_str().ok_or("暂不支持非 UTF-8 文件名。")?;
-        if text.eq_ignore_ascii_case(".git") || text.contains(':') || text.ends_with(['.', ' ']) {
-            return Err("不能访问 Git 管理文件或特殊文件路径。".into());
-        }
+        validate_entry_name(text)?;
         path.push(name);
         let metadata =
             fs::symlink_metadata(&path).map_err(|error| format!("无法访问文件：{error}"))?;
@@ -175,7 +200,7 @@ fn ignored_paths(root: &Path, entries: &[ProjectEntry]) -> Result<HashSet<String
 fn list_at(root: &Path, directory: &str, show_ignored: bool) -> Result<ProjectListing, String> {
     let target = safe_path(root, directory, true)?;
     let mut entries = Vec::new();
-    for entry in fs::read_dir(target).map_err(|error| format!("无法读取目录：{error}"))? {
+    for entry in fs::read_dir(&target).map_err(|error| format!("无法读取目录：{error}"))? {
         let entry = entry.map_err(|error| error.to_string())?;
         let name = entry
             .file_name()
@@ -193,8 +218,7 @@ fn list_at(root: &Path, directory: &str, show_ignored: bool) -> Result<ProjectLi
         } else {
             format!("{directory}/{name}")
         };
-        let blocked =
-            safe_path(root, &path, false).is_err() || (!metadata.is_dir() && !metadata.is_file());
+        let blocked = !validate_verified_child(&target, &name, &metadata);
         entries.push(ProjectEntry {
             name,
             path,
@@ -710,6 +734,30 @@ mod tests {
             run_text(root, &["config", "user.name"]).unwrap(),
             "esaygit test"
         );
+    }
+
+    #[test]
+    fn validate_entry_name_rejects_separators_and_git_variants() {
+        for invalid in [
+            "",
+            ".",
+            "..",
+            ".git",
+            ".GIT",
+            ".git/",
+            ".git\\",
+            "foo/",
+            "foo\\bar",
+            "foo/./",
+            "file:stream",
+            "trailing.",
+            "trailing ",
+        ] {
+            assert!(validate_entry_name(invalid).is_err(), "{invalid:?}");
+        }
+        for valid in ["README.md", ".gitignore", "中文.txt"] {
+            assert!(validate_entry_name(valid).is_ok(), "{valid:?}");
+        }
     }
 
     #[test]

@@ -137,9 +137,20 @@ fn receive_pipe(receiver: &Receiver<io::Result<Vec<u8>>>) -> io::Result<Option<V
 
 fn stop_process_tree(child: &mut Child) {
     // Do not target a PID after the child has already exited: it may be reused.
-    // The Windows job handle still cleans up any remaining descendants on drop.
+    // On Windows, callers drop the ProcessJob handle first so kernel teardown
+    // starts immediately; wait briefly before falling back to taskkill.
     if matches!(child.try_wait(), Ok(Some(_))) {
         return;
+    }
+    #[cfg(windows)]
+    {
+        let job_wait = Instant::now() + Duration::from_millis(25);
+        while Instant::now() < job_wait {
+            thread::sleep(Duration::from_millis(2));
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+        }
     }
     // Terminate the tree before the root: Git may be waiting on SSH or a hook.
     // Only the PID returned by our own Command::spawn is ever targeted.
@@ -262,11 +273,12 @@ fn output_with_policy(
         return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
     }
     #[cfg(windows)]
-    let process_job = ProcessJob::new()?;
+    let mut process_job = Some(ProcessJob::new()?);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn()?;
     #[cfg(windows)]
-    if let Err(error) = process_job.assign(&child) {
+    if let Err(error) = process_job.as_ref().unwrap().assign(&child) {
+        drop(process_job.take());
         stop_process_tree(&mut child);
         return Err(error);
     }
@@ -281,6 +293,7 @@ fn output_with_policy(
     let mut status = None;
     let mut stdout = None;
     let mut stderr = None;
+    let mut poll_ms = 1u64;
     loop {
         for bytes in progress_receiver.try_iter() {
             if let Some(callback) = progress.as_mut() {
@@ -288,6 +301,8 @@ fn output_with_policy(
             }
         }
         if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            #[cfg(windows)]
+            drop(process_job.take());
             stop_process_tree(&mut child);
             return Err(io::Error::new(io::ErrorKind::Interrupted, "搜索已取消。"));
         }
@@ -304,6 +319,8 @@ fn output_with_policy(
             Ok(())
         })();
         if let Err(error) = poll {
+            #[cfg(windows)]
+            drop(process_job.take());
             stop_process_tree(&mut child);
             return Err(error);
         }
@@ -317,13 +334,16 @@ fn output_with_policy(
             });
         }
         if Instant::now() >= deadline {
+            #[cfg(windows)]
+            drop(process_job.take());
             stop_process_tree(&mut child);
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Git 操作超时，已停止本次任务。操作可能已部分完成，请刷新仓库状态后再继续。",
             ));
         }
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(poll_ms));
+        poll_ms = (poll_ms * 2).min(10);
     }
 }
 

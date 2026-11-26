@@ -1,4 +1,4 @@
-use super::{optional_text, output, parse_status, run, run_text, validate_files, with_repository};
+use super::{file_status, optional_text, output, run, run_text, validate_files, with_repository};
 use serde::Serialize;
 use std::{fs, io::Read, path::Path};
 
@@ -126,15 +126,16 @@ pub(super) fn read_file_versions(
     file: &str,
     staged: bool,
 ) -> Result<FileVersions, String> {
-    let files = parse_status(&run(
-        root,
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-    )?)?;
-    let selected = files.iter().find(|entry| entry.path == file);
+    let selected = file_status(root, file, true)?;
     let history_path = selected
+        .as_ref()
         .and_then(|entry| entry.old_path.as_deref())
         .unwrap_or(file);
-    let original_path = if staged || selected.is_some_and(|entry| entry.worktree_status == "R") {
+    let original_path = if staged
+        || selected
+            .as_ref()
+            .is_some_and(|entry| entry.worktree_status == "R")
+    {
         history_path
     } else {
         file
