@@ -15,11 +15,11 @@ window.addEventListener('keydown', event => {
   }
 }, true);
 export function finishBoot() {
-  const remaining = Math.max(0, 850 - (performance.now() - started));
+  const remaining = Math.max(0, 150 - (performance.now() - started));
   window.setTimeout(() => {
     const screen = document.getElementById('app-loading');
     screen?.classList.add('leaving');
-    window.setTimeout(() => screen?.remove(), 350);
+    window.setTimeout(() => screen?.remove(), 220);
   }, remaining);
 }
 

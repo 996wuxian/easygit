@@ -148,11 +148,11 @@ fn snapshot_resolves_local_custom_and_missing_upstreams() {
 fn profile_repository_refresh() {
     let path = std::env::var("EASYGIT_PERF_REPO").expect("set EASYGIT_PERF_REPO");
     for sample in 0..5 {
-        GIT_COMMAND_COUNT.with(|count| count.set(0));
+        GIT_COMMAND_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
         let start = Instant::now();
         let snapshot = open_repository(&path).unwrap();
         let elapsed = start.elapsed();
-        let commands = GIT_COMMAND_COUNT.with(|count| count.get());
+        let commands = GIT_COMMAND_COUNT.load(std::sync::atomic::Ordering::Relaxed);
         println!(
             "sample={sample} git_commands={commands} elapsed_ms={:.1} commits={} files={}",
             elapsed.as_secs_f64() * 1000.0,

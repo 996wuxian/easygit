@@ -3,7 +3,7 @@ mod blame;
 mod branches;
 mod cherry_pick;
 mod commit_actions;
-pub use blame::{read_file_blame, FileBlame};
+pub use blame::{read_file_blame_managed, BlameState, FileBlame};
 pub use branches::{manage_branch, read_branch_info, BranchInfo, BranchRequest};
 pub use cherry_pick::cherry_pick;
 mod comparison;
@@ -156,9 +156,7 @@ type RepoLocks = Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>;
 static REPO_LOCKS: OnceLock<RepoLocks> = OnceLock::new();
 static GIT_VERSION: OnceLock<String> = OnceLock::new();
 #[cfg(test)]
-thread_local! {
-    static GIT_COMMAND_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
+static GIT_COMMAND_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn command(root: Option<&Path>) -> Command {
     let mut command = Command::new("git");
@@ -189,7 +187,7 @@ const STDERR_LIMIT: usize = 1024 * 1024;
 
 fn output_mode(root: Option<&Path>, args: &[&str], mode: OutputMode) -> Result<Output, String> {
     #[cfg(test)]
-    GIT_COMMAND_COUNT.with(|count| count.set(count.get() + 1));
+    GIT_COMMAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut command = command(root);
     command.args(args);
     let timeout = Duration::from_secs(60);
@@ -403,17 +401,48 @@ fn snapshot_files(root: &Path) -> Result<Vec<GitFile>, String> {
 }
 
 fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
-    let files = snapshot_files(root)?;
-    let branch_data = run_text(
-        root,
-        &[
-            "for-each-ref",
-            "--sort=-committerdate",
-            "--format=%(refname:short)%00%(HEAD)%00%(refname)%00%(committerdate:iso-strict)%00%(objectname)%00%(upstream)%00%(upstream:short)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )?;
+    let (files, branch_data, remote, stash_data, git_dir_text) = std::thread::scope(|scope| {
+        let files_task = scope.spawn(|| snapshot_files(root));
+        let branch_task = scope.spawn(|| {
+            run_text(
+                root,
+                &[
+                    "for-each-ref",
+                    "--sort=-committerdate",
+                    "--format=%(refname:short)%00%(HEAD)%00%(refname)%00%(committerdate:iso-strict)%00%(objectname)%00%(upstream)%00%(upstream:short)",
+                    "refs/heads",
+                    "refs/remotes",
+                ],
+            )
+        });
+        let remote_task = scope.spawn(|| {
+            let remote_names = run_text(root, &["remote"])?;
+            let remote_name = remote_names
+                .lines()
+                .find(|name| *name == "origin")
+                .or_else(|| remote_names.lines().next());
+            match remote_name {
+                Some(name) => optional_text(root, &["remote", "get-url", name]),
+                None => Ok(None),
+            }
+        });
+        let stash_task = scope.spawn(|| run_text(root, &["stash", "list", "--format=%H"]));
+        let git_dir_text = run_text(root, &["rev-parse", "--absolute-git-dir"]);
+
+        let files = files_task
+            .join()
+            .map_err(|_| "读取仓库文件状态失败。".to_owned())??;
+        let branch_data = branch_task
+            .join()
+            .map_err(|_| "读取仓库分支列表失败。".to_owned())??;
+        let remote = remote_task
+            .join()
+            .map_err(|_| "读取远程仓库配置失败。".to_owned())??;
+        let stash_data = stash_task
+            .join()
+            .map_err(|_| "读取仓库暂存记录失败。".to_owned())??;
+        Ok::<_, String>((files, branch_data, remote, stash_data, git_dir_text?))
+    })?;
     let branch_refs: Vec<Vec<&str>> = branch_data
         .lines()
         .map(|line| line.split('\0').collect::<Vec<_>>())
@@ -490,15 +519,26 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         None => None,
     };
     let has_upstream = upstream.is_some();
-    let commits = history::read_history(root, head.as_deref(), &branch, upstream.as_ref())?;
-    let counts = if has_upstream {
-        optional_text(
-            root,
-            &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
-        )?
-        .unwrap_or_default()
+    let (commits, counts) = if has_upstream {
+        std::thread::scope(|scope| {
+            let counts_task = scope.spawn(|| {
+                optional_text(
+                    root,
+                    &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+                )
+            });
+            let commits = history::read_history(root, head.as_deref(), &branch, upstream.as_ref())?;
+            let counts = counts_task
+                .join()
+                .map_err(|_| "读取分支同步计数失败。".to_owned())??
+                .unwrap_or_default();
+            Ok::<_, String>((commits, counts))
+        })?
     } else {
-        String::new()
+        (
+            history::read_history(root, head.as_deref(), &branch, upstream.as_ref())?,
+            String::new(),
+        )
     };
     let mut counts = counts.split_whitespace();
     let ahead = counts
@@ -509,18 +549,8 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
         .next()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
-    let remote_names = run_text(root, &["remote"])?;
-    let remote_name = remote_names
-        .lines()
-        .find(|name| *name == "origin")
-        .or_else(|| remote_names.lines().next());
-    let remote = match remote_name {
-        Some(name) => optional_text(root, &["remote", "get-url", name])?,
-        None => None,
-    };
-    let stash_data = run_text(root, &["stash", "list", "--format=%H"])?;
     let stash_count = stash_data.lines().count();
-    let git_dir = PathBuf::from(run_text(root, &["rev-parse", "--absolute-git-dir"])?);
+    let git_dir = PathBuf::from(git_dir_text);
     let operation = [
         ("rebase-merge", "rebase"),
         ("rebase-apply", "rebase"),

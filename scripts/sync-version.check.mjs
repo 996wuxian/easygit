@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { syncVersion } from './sync-version.mjs';
 
 function fixture(t, version = '1.2.3') {
@@ -38,4 +39,12 @@ test('check mode refuses mismatches without writing', t => {
 test('validates semantic versions before any writes', t => {
   for (const version of ['01.2.3', '1.2', '1.2.3-extra.01', '1.2.3 trailing', '1.2.3\n', 'v1.2.3']) assert.throws(() => syncVersion(fixture(t, version)), /valid semantic version/);
   assert.equal(syncVersion(fixture(t, '1.2.3-beta.1+build.42')).version, '1.2.3-beta.1+build.42');
+});
+test('release workflow references an existing npm script in package.json', () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  const workflow = readFileSync(join(repoRoot, '.github/workflows/release.yml'), 'utf8');
+  const match = /^\s*tauriScript:\s*npm\s+run\s+([^\s]+)\s*$/m.exec(workflow);
+  assert.ok(match, 'release.yml must declare tauriScript: npm run <script>');
+  assert.ok(pkg.scripts?.[match[1]], `package.json is missing script "${match[1]}" required by release.yml`);
 });

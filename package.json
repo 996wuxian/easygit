@@ -13,6 +13,7 @@
     "url": "https://github.com/996wuxian/easygit.git"
   },
   "scripts": {
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/sync-version.mjs && tauri build",
     "sync:version": "node scripts/sync-version.mjs",

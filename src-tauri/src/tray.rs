@@ -35,7 +35,7 @@ pub fn exit_app(app: AppHandle) {
     app.exit(0);
 }
 
-fn restore(app: &AppHandle) {
+pub(crate) fn restore(app: &AppHandle) {
     if let Err(error) = show_main_window(app.clone()) {
         eprintln!("无法显示 easygit：{error}");
     }

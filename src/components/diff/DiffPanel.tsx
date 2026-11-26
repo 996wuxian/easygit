@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconMaximize, IconCode, IconCopy, IconFileCode, IconLoader2, IconTextWrap, IconX } from '@tabler/icons-react';
-import { git, type DiffBlock, type FileBlame, type RepositorySnapshot } from '../../services/git';
+import { git, isDesktop, type DiffBlock, type FileBlame, type RepositorySnapshot } from '../../services/git';
 import { ExpandedDiff } from './ExpandedDiff';
 import { isCombinedDiff, UnifiedDiff } from './UnifiedDiff';
 import { countDiffChanges } from './model';
@@ -40,12 +40,18 @@ export function DiffPanel({ snapshot, selected, staged, onStagedChange, onSelect
   useEffect(() => {
     if (!snapshot.path || !selected) return;
     let cancelled = false;
+    let settled = false;
     void git.blame(snapshot.path, selected, staged).then(data => {
+      settled = true;
       if (!cancelled) setBlameResult({ key: blameKey, data });
     }).catch(() => {
+      settled = true;
       if (!cancelled) setBlameResult(null);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (!settled && isDesktop()) void git.cancelBlame(snapshot.path).catch(() => {});
+    };
   }, [snapshot, selected, staged, blameKey]);
   const blameData = blameResult?.key === blameKey ? blameResult.data : null;
   const blame = useMemo(() => blameData ? {

@@ -110,6 +110,7 @@ export const git = {
   openDirectory: (path: string) => invokeCommand<void>('open_repository_directory', { path }),
   diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
   blame: (path: string, file: string, staged: boolean) => invokeCommand<FileBlame>('read_file_blame', { path, file, staged }),
+  cancelBlame: (path: string) => invokeCommand<void>('cancel_file_blame', { path }),
   comparison: (path: string, file: string, staged: boolean) => invokeCommand<FileComparison>('read_file_comparison', { path, file, staged }),
   stagedDiff: (path: string) => invokeCommand<string>('read_staged_diff', { path }),
   stage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('stage_files', { path, files }),

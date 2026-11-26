@@ -1,8 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconNotes } from '@tabler/icons-react';
+import { isDesktop } from '../services/git';
 import { appStorage, flushStorage } from '../services/storage';
 import { Dialog } from './Dialog';
 import './project-notes.css';
+
+const NOTES_FLUSH_DELAY_MS = 400;
 
 type NoteState = { content: string } & (
   | { status: 'saved' | 'saving' }
@@ -21,13 +24,40 @@ export function ProjectNotesDialog({ path, name, onClose }: { path: string; name
   const storageKey = `easygit.project-notes.v1:${path}`;
   const [note, setNote] = useState(() => readNote(storageKey));
   const revision = useRef(0);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function save(content: string): Promise<boolean> {
+  const clearFlushTimer = () => {
+    if (flushTimer.current !== null) {
+      clearTimeout(flushTimer.current);
+      flushTimer.current = null;
+    }
+  };
+
+  useEffect(() => clearFlushTimer, []);
+
+  async function save(content: string, immediate = false): Promise<boolean> {
+    clearFlushTimer();
     const current = ++revision.current;
     setNote({ content, status: 'saving' });
     try {
       // Update the shared cache immediately so closing or quitting cannot drop recent edits.
       appStorage.setItem(storageKey, content);
+      if (!immediate && isDesktop()) {
+        flushTimer.current = setTimeout(() => {
+          flushTimer.current = null;
+          void flushStorage().then(
+            () => {
+              if (current === revision.current) setNote({ content, status: 'saved' });
+            },
+            error => {
+              if (current === revision.current) {
+                setNote({ content, status: 'error', message: `笔记保存失败：${String(error)}` });
+              }
+            },
+          );
+        }, NOTES_FLUSH_DELAY_MS);
+        return true;
+      }
       await flushStorage();
       if (current !== revision.current) return false;
       setNote({ content, status: 'saved' });
@@ -41,7 +71,7 @@ export function ProjectNotesDialog({ path, name, onClose }: { path: string; name
   }
 
   async function close() {
-    if (note.status === 'saved' || note.status === 'load-error' || await save(note.content)) onClose();
+    if (note.status === 'saved' || note.status === 'load-error' || await save(note.content, true)) onClose();
   }
 
   const failed = note.status === 'error' || note.status === 'load-error';
@@ -65,7 +95,7 @@ export function ProjectNotesDialog({ path, name, onClose }: { path: string; name
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
           event.stopPropagation();
-          void save(note.content);
+          void save(note.content, true);
         }
       }}
     />
@@ -77,7 +107,7 @@ export function ProjectNotesDialog({ path, name, onClose }: { path: string; name
       </span>
       <div className="project-notes-actions">
         {note.status === 'load-error' && <button className="secondary-button" onClick={() => setNote(readNote(storageKey))}>重新读取</button>}
-        {note.status === 'error' && <button className="secondary-button" onClick={() => { void save(note.content); }}><IconDeviceFloppy size={15} aria-hidden="true" />重试保存</button>}
+        {note.status === 'error' && <button className="secondary-button" onClick={() => { void save(note.content, true); }}><IconDeviceFloppy size={15} aria-hidden="true" />重试保存</button>}
         <button className="primary-button" onClick={() => { void close(); }}><IconCheck size={15} aria-hidden="true" />完成</button>
       </div>
     </div>

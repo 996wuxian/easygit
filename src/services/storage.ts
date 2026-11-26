@@ -37,7 +37,7 @@ function splitAiSettings(raw: string | null): { value: string; apiKey: string | 
   return { value: '{}', apiKey: null };
 }
 
-/** Synchronous UI reads, with serialized writes to the native JSON and secret files. */
+/** Synchronous UI reads, with serialized and optionally debounced writes to the native JSON and secret files. */
 export class FileBackedStorage {
   private values: Record<string, string> = {};
   private apiKey = '';
@@ -46,11 +46,14 @@ export class FileBackedStorage {
   private revision = 0;
   private savedRevision = 0;
   private writes: Promise<void> = Promise.resolve();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private pendingApiKeyWaiter: { resolve: () => void; reject: (error: unknown) => void } | null = null;
 
   constructor(
     private readonly driver: StorageDriver,
     private readonly legacy: Pick<Storage, 'getItem' | 'removeItem'>,
     private readonly reportError: (error: unknown) => void = () => {},
+    private readonly debounceMs = 0,
   ) {}
 
   async initialize(): Promise<void> {
@@ -93,7 +96,7 @@ export class FileBackedStorage {
     if (this.values[key] === value) return;
     this.values = { ...this.values, [key]: value };
     this.revision++;
-    void this.persist().catch(this.reportError);
+    this.schedulePersist(true);
   }
 
   getApiKey(): string {
@@ -106,7 +109,36 @@ export class FileBackedStorage {
     if (this.apiKey === apiKey && this.savedApiKey === apiKey) return Promise.resolve();
     this.apiKey = apiKey;
     this.revision++;
-    return this.persist();
+    if (this.debounceMs <= 0) {
+      return this.persist();
+    }
+    this.pendingApiKeyWaiter?.resolve();
+    return new Promise<void>((resolve, reject) => {
+      this.pendingApiKeyWaiter = { resolve, reject };
+      this.schedulePersist(false);
+    });
+  }
+
+  private schedulePersist(reportOnError: boolean) {
+    if (this.debounceMs <= 0) {
+      void this.persist().catch(error => {
+        if (reportOnError) this.reportError(error);
+      });
+      return;
+    }
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      const waiter = this.pendingApiKeyWaiter;
+      this.pendingApiKeyWaiter = null;
+      void this.persist().then(
+        () => { waiter?.resolve(); },
+        error => {
+          if (waiter) waiter.reject(error);
+          else this.reportError(error);
+        },
+      );
+    }, this.debounceMs);
   }
 
   private persist(): Promise<void> {
@@ -127,8 +159,22 @@ export class FileBackedStorage {
   }
 
   async flush(): Promise<void> {
-    await this.writes.catch(() => {});
-    if (this.savedRevision !== this.revision) await this.persist();
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    const waiter = this.pendingApiKeyWaiter;
+    this.pendingApiKeyWaiter = null;
+    try {
+      await this.writes.catch(() => {});
+      if (this.savedRevision !== this.revision || this.savedApiKey !== this.apiKey) {
+        await this.persist();
+      }
+      waiter?.resolve();
+    } catch (error) {
+      waiter?.reject(error);
+      throw error;
+    }
   }
 }
 
@@ -140,6 +186,8 @@ function reportStorageError(error: unknown) {
     detail: `本地数据保存失败：${error instanceof Error ? error.message : String(error)}`,
   }));
 }
+
+const DESKTOP_WRITE_DEBOUNCE_MS = 350;
 
 export async function initializeStorage(): Promise<void> {
   if (!isDesktop()) {
@@ -154,7 +202,7 @@ export async function initializeStorage(): Promise<void> {
     writeData: values => invokeCommand<void>('write_app_data', { values }),
     readApiKey: () => invokeCommand<string | null>('read_ai_api_key'),
     writeApiKey: apiKey => invokeCommand<void>('write_ai_api_key', { apiKey }),
-  }, localStorage, reportStorageError);
+  }, localStorage, reportStorageError, DESKTOP_WRITE_DEBOUNCE_MS);
   await storage.initialize();
   desktopStorage = storage;
 }

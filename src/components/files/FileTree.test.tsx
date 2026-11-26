@@ -65,4 +65,16 @@ describe('当前编辑文件的目录定位', () => {
       expect(document.activeElement).toBe(editor);
     } finally { editor.remove(); }
   });
+
+  it('刷新目录期间保留已展开节点，不闪回加载占位符', async () => {
+    await render('src/mixins/appMixin.js');
+    const fileRow = button('打开文件 src/mixins/appMixin.js');
+    let finishRoot!: (result: ProjectListing) => void;
+    vi.mocked(project.files).mockReturnValueOnce(new Promise(resolve => { finishRoot = resolve; }));
+    await act(async () => root.render(<FileTree repository="X:/QA/project" files={[]} refreshKey="two" selected="src/mixins/appMixin.js" onOpen={opened} />));
+    expect(button('打开文件 src/mixins/appMixin.js')).toBe(fileRow);
+    expect(host.textContent).not.toContain('正在读取文件');
+    await act(async () => finishRoot(listing(tree[''])));
+    expect(button('打开文件 src/mixins/appMixin.js')).toBe(fileRow);
+  });
 });

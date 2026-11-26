@@ -193,11 +193,26 @@ async fn read_diff(path: String, file: String, staged: bool) -> Result<String, S
 
 #[tauri::command]
 async fn read_file_blame(
+    state: tauri::State<'_, git::BlameState>,
     path: String,
     file: String,
     staged: bool,
 ) -> Result<git::FileBlame, String> {
-    blocking(move || git::read_file_blame(&path, &file, staged)).await
+    let blame_state = state.inner().clone();
+    blocking(move || git::read_file_blame_managed(&blame_state, &path, &file, staged)).await
+}
+
+#[tauri::command]
+async fn cancel_file_blame(
+    state: tauri::State<'_, git::BlameState>,
+    path: String,
+) -> Result<(), String> {
+    let blame_state = state.inner().clone();
+    blocking(move || {
+        blame_state.cancel(&path);
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -513,11 +528,17 @@ async fn compare_commits(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        tray::restore(app);
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .manage(updates::UpdateState::default())
         .manage(git::FileSearchState::default())
         .manage(git::CloneState::default())
+        .manage(git::BlameState::default())
         .setup(tray::setup)
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -567,6 +588,7 @@ pub fn run() {
             run_project_script,
             read_diff,
             read_file_blame,
+            cancel_file_blame,
             read_file_comparison,
             read_staged_diff,
             generate_commit_message,

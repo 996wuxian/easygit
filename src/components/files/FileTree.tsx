@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconChevronRight, IconFileCode, IconFolder, IconFolderOpen, IconLock, IconPhoto, IconRefresh, IconSearch } from '@tabler/icons-react';
 import type { GitFile } from '../../services/git';
 import { project, type FilePosition, type FileSearchMode, type ProjectEntry, type ProjectListing } from '../../services/project';
@@ -11,20 +11,29 @@ interface TreeProps extends FileActionsProps {
   repository: string; files: GitFile[]; refreshKey: string; selected?: string; revision?: string;
   onOpen: (file: string, position?: FilePosition) => void;
 }
-interface DirectoryProps extends TreeProps { directory: string; showIgnored: boolean; query?: string; onEntryMenu?: (entry: ProjectEntry, x: number, y: number) => void }
+interface DirectoryProps extends TreeProps {
+  directory: string; showIgnored: boolean; query?: string;
+  fileStatusMap: Map<string, GitFile>;
+  onEntryMenu?: (entry: ProjectEntry, x: number, y: number) => void;
+}
 
 function Directory(props: DirectoryProps) {
   const { repository, directory, showIgnored, query = '', refreshKey } = props;
-  const [result, setResult] = useState<ProjectListing | null>(null);
+  const scopeKey = JSON.stringify([repository, directory, showIgnored, query]);
+  const [state, setState] = useState<{ scopeKey: string; listing: ProjectListing } | null>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setResult(null); setError('');
-    void project.files(repository, directory, showIgnored, query).then(value => { if (!cancelled) setResult(value); })
-      .catch(reason => { if (!cancelled) setError(String(reason)); });
+    setError('');
+    void project.files(repository, directory, showIgnored, query).then(value => {
+      if (!cancelled) setState({ scopeKey, listing: value });
+    }).catch(reason => {
+      if (!cancelled) setError(String(reason));
+    });
     return () => { cancelled = true; };
-  }, [repository, directory, showIgnored, query, refreshKey, retry]);
+  }, [repository, directory, showIgnored, query, scopeKey, refreshKey, retry]);
+  const result = state?.scopeKey === scopeKey ? state.listing : null;
   if (error) return <div className="files-message" role="alert">{error}<button className="text-button" onClick={() => setRetry(value => value + 1)}>重试</button></div>;
   if (!result) return <div className="files-message" role="status">正在读取文件…</div>;
   return <><ul className="project-tree-list" aria-label={directory || (query ? '文件搜索结果' : '项目根目录')}>
@@ -49,7 +58,7 @@ function Entry({ entry, ...props }: DirectoryProps & { entry: ProjectEntry }) {
     const offset = bounds.top < visible.top ? bounds.top - visible.top : bounds.bottom > visible.bottom ? bounds.bottom - visible.bottom : 0;
     if (offset) viewport.scrollTo({ top: viewport.scrollTop + offset, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [entry.directory, entry.path, props.selected]);
-  const status = props.files.find(file => file.path === entry.path);
+  const status = props.fileStatusMap.get(entry.path);
   const label = status?.conflicted ? '冲突' : status?.untracked || status?.indexStatus === 'A' ? '新增' : status?.indexStatus === 'R' || status?.worktreeStatus === 'R' ? '重命名' : status ? '修改' : entry.ignored ? '忽略' : '';
   const Icon = entry.blocked ? IconLock : entry.directory ? expanded ? IconFolderOpen : IconFolder : isImageFile(entry.path) ? IconPhoto : IconFileCode;
   return <li>
@@ -81,6 +90,7 @@ export function FileTree(props: TreeProps) {
   const [refresh, setRefresh] = useState(0);
   const viewport = useRef<HTMLDivElement>(null);
   const actions = useFileActions(props.repository, props, () => setRefresh(value => value + 1));
+  const fileStatusMap = useMemo(() => new Map(props.files.map(file => [file.path, file])), [props.files]);
   const refreshKey = `${props.refreshKey}:${refresh}`;
   return <nav className="project-files" aria-label="项目文件浏览">
     <div className="files-toolbar">
@@ -90,7 +100,7 @@ export function FileTree(props: TreeProps) {
     </div>
     <div className="files-options"><label><input type="checkbox" checked={showIgnored} onChange={event => setShowIgnored(event.target.checked)} />显示忽略文件</label><span>{mode === 'content' ? '搜索磁盘内容' : '工作区文件'}</span></div>
     {actions.feedback}
-    <div ref={viewport} className="project-tree-scroll">{query.trim() ? <ProjectSearchResults repository={props.repository} query={query} mode={mode} showIgnored={showIgnored} refreshKey={`${refreshKey}:${mode === 'content' ? props.revision ?? '' : ''}`} selected={props.selected} viewport={viewport} onOpen={props.onOpen} onEntryMenu={(file, x, y) => actions.open({ path: file, directory: false }, x, y)} /> : <Directory {...props} directory="" showIgnored={showIgnored} refreshKey={refreshKey} onEntryMenu={actions.open} />}</div>
+    <div ref={viewport} className="project-tree-scroll">{query.trim() ? <ProjectSearchResults repository={props.repository} query={query} mode={mode} showIgnored={showIgnored} refreshKey={`${refreshKey}:${mode === 'content' ? props.revision ?? '' : ''}`} selected={props.selected} viewport={viewport} onOpen={props.onOpen} onEntryMenu={(file, x, y) => actions.open({ path: file, directory: false }, x, y)} /> : <Directory {...props} directory="" showIgnored={showIgnored} refreshKey={refreshKey} fileStatusMap={fileStatusMap} onEntryMenu={actions.open} />}</div>
     {actions.overlays}
   </nav>;
 }

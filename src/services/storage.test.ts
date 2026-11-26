@@ -136,4 +136,40 @@ describe('file-backed application storage', () => {
     await storage.flush();
     expect(driver.data![COMMIT_DRAFTS_KEY]).toContain('fix: 修复问题');
   });
+
+  it('debounces rapid edits into a single disk write and flushes immediately on demand', async () => {
+    const driver = new MemoryFileDriver();
+    let dataWrites = 0;
+    let keyWrites = 0;
+    const origWriteData = driver.writeData.bind(driver);
+    const origWriteKey = driver.writeApiKey.bind(driver);
+    driver.writeData = async values => { dataWrites++; await origWriteData(values); };
+    driver.writeApiKey = async key => { keyWrites++; await origWriteKey(key); };
+
+    const storage = new FileBackedStorage(driver, new MemoryLegacyStorage(), () => {}, 40);
+    await storage.initialize();
+    dataWrites = 0;
+    keyWrites = 0;
+
+    storage.setItem(COMMIT_DRAFTS_KEY, '{"X:/Alpha":"f"}');
+    storage.setItem(COMMIT_DRAFTS_KEY, '{"X:/Alpha":"fe"}');
+    storage.setItem(COMMIT_DRAFTS_KEY, '{"X:/Alpha":"feat: 合并写入"}');
+    const firstKey = storage.setApiKey('sk-1');
+    const secondKey = storage.setApiKey('sk-1234');
+    expect(storage.getItem(COMMIT_DRAFTS_KEY)).toContain('feat: 合并写入');
+    expect(dataWrites).toBe(0);
+    expect(keyWrites).toBe(0);
+
+    await Promise.all([firstKey, secondKey]);
+    expect(dataWrites).toBe(1);
+    expect(keyWrites).toBe(1);
+    expect(driver.apiKey).toBe('sk-1234');
+    expect(driver.data![COMMIT_DRAFTS_KEY]).toContain('feat: 合并写入');
+
+    storage.setItem('esaygit.theme', 'dark');
+    expect(dataWrites).toBe(1);
+    await storage.flush();
+    expect(dataWrites).toBe(2);
+    expect(driver.data!['esaygit.theme']).toBe('dark');
+  });
 });
