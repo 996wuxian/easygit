@@ -1,6 +1,6 @@
-use super::{output, snapshot, with_repository, PullResult, RepositorySnapshot};
+use super::{command, snapshot, with_repository, PullResult, RepositorySnapshot};
 use serde::Deserialize;
-use std::{fs, io::Read, path::Path};
+use std::{fs, io::Read, path::Path, time::Duration};
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -104,10 +104,16 @@ pub fn act_on_operation(path: &str, request: OperationRequest) -> Result<PullRes
             OperationAction::Skip => "--skip",
         };
         // Use the prepared commit message without launching an interactive editor.
-        let result = output(
-            Some(root),
-            &["-c", "core.editor=true", &request.operation, flag],
-        )?;
+        // Set GIT_EDITOR as well because it takes precedence over core.editor.
+        let mut process = command(Some(root));
+        process.env("GIT_EDITOR", "true").args([
+            "-c",
+            "core.editor=true",
+            &request.operation,
+            flag,
+        ]);
+        let result = crate::process::output_with_timeout(&mut process, Duration::from_secs(60))
+            .map_err(|error| format!("无法启动 Git：{error}"))?;
         outcome(root, result)
     })
 }

@@ -52,12 +52,14 @@ afterEach(async () => {
 });
 
 describe('项目笔记工作流', () => {
-  it('从状态左侧打开，自动保存，按项目隔离并在重启界面后恢复', async () => {
+  it('从侧栏菜单打开，自动保存，按项目隔离并在重启界面后恢复', async () => {
     await act(async () => root.render(<App onReady={ready} />));
     expect(host.querySelector('.project-notes-button')).toBeNull();
     await click('打开仓库 Alpha');
     const entry = button('项目笔记');
-    expect(entry.nextElementSibling?.classList.contains('workspace-status')).toBe(true);
+    expect(entry.closest('.sidebar .main-nav')).not.toBeNull();
+    expect(host.querySelector('.page-heading')).toBeNull();
+    expect(host.querySelector('[aria-label="刷新仓库"]')).toBeNull();
     entry.focus();
     await click('项目笔记');
     expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('项目笔记');

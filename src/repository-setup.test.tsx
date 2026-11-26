@@ -59,7 +59,7 @@ describe('侧栏直接打开隐藏面板', () => {
     const layout = { ...defaultPanelLayout(), hidden: ['changes', 'diff', 'branches', 'commits', 'files', 'activity'], sizes: { diff: { span: 8, height: 460 } } };
     localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
     await openWorkspace();
-    expect(Array.from(host.querySelectorAll('.main-nav button')).map(node => node.getAttribute('aria-label'))).toEqual(['工作区变更', '代码差异', '分支', '提交记录', '项目文件']);
+    expect(Array.from(host.querySelectorAll('.main-nav button')).map(node => node.getAttribute('aria-label'))).toEqual(['工作区变更', '代码差异', '分支', '提交记录', '项目文件', '项目笔记']);
     for (const [label, id] of [['工作区变更', 'changes'], ['代码差异', 'diff'], ['分支', 'branches'], ['提交记录', 'commits'], ['项目文件', 'files']]) {
       expect(host.querySelector(`[data-eg-panel="${id}"]`)).toBeNull();
       await click(label);

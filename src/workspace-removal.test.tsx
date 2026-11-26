@@ -47,10 +47,10 @@ async function click(label: string, scope: ParentNode = host) {
 function saved() { return JSON.parse(localStorage.getItem('esaygit.recent.v1') ?? '[]'); }
 
 describe('工作区移除交互', () => {
-  it('侧栏移除先确认，取消后记录和当前工作区保持不变', async () => {
+  it('顶部项目栏移除先确认，取消后记录和当前工作区保持不变', async () => {
     await act(async () => root.render(<App onReady={() => {}} />));
     await click('打开仓库 Alpha');
-    await click('移除工作区 Alpha', host.querySelector('aside')!);
+    await click('移除工作区 Alpha', host.querySelector('[aria-label="仓库列表"]')!);
     const dialog = host.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('本地文件、Git 仓库及未提交的更改都会保留');
     expect(dialog.textContent).toContain(alpha.path);
@@ -60,13 +60,13 @@ describe('工作区移除交互', () => {
     expect(saved()).toEqual([alpha, beta]);
   });
 
-  it('确认移除当前工作区后，侧栏、最近列表、标题和内容同步清除，不调用 Git 写操作', async () => {
+  it('确认移除当前工作区后，项目栏、最近列表、标题和内容同步清除，不调用 Git 写操作', async () => {
     await act(async () => root.render(<App onReady={() => {}} />));
     await click('打开仓库 Alpha');
-    await click('移除工作区 Alpha', host.querySelector('aside')!);
+    await click('移除工作区 Alpha', host.querySelector('[aria-label="仓库列表"]')!);
     await click('确认移除');
     expect(host.querySelector('[aria-label="尚未打开仓库"]')).not.toBeNull();
-    expect(host.querySelector('aside')?.textContent).not.toContain('Alpha');
+    expect(host.querySelector('[aria-label="仓库列表"]')?.textContent).not.toContain('Alpha');
     expect(host.querySelector('main')?.textContent).not.toContain('Alpha');
     expect(host.querySelector('[aria-label="当前项目与分支"]')).toBeNull();
     expect(saved()).toEqual([beta]);

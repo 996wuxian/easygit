@@ -70,7 +70,11 @@ describe('当前编辑文件的目录定位', () => {
     await render('src/mixins/appMixin.js');
     const fileRow = button('打开文件 src/mixins/appMixin.js');
     let finishRoot!: (result: ProjectListing) => void;
-    vi.mocked(project.files).mockReturnValueOnce(new Promise(resolve => { finishRoot = resolve; }));
+    const baseImpl = vi.mocked(project.files).getMockImplementation()!;
+    vi.mocked(project.files).mockImplementation((repository, directory = '', showIgnored, query) => {
+      if (directory === '') return new Promise(resolve => { finishRoot = resolve; });
+      return baseImpl(repository, directory, showIgnored, query);
+    });
     await act(async () => root.render(<FileTree repository="X:/QA/project" files={[]} refreshKey="two" selected="src/mixins/appMixin.js" onOpen={opened} />));
     expect(button('打开文件 src/mixins/appMixin.js')).toBe(fileRow);
     expect(host.textContent).not.toContain('正在读取文件');

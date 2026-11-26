@@ -1,5 +1,10 @@
 use serde::Serialize;
-use std::{fs, io::Read, path::Path, process::Command};
+use std::{
+    fs,
+    io::Read,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,13 +137,36 @@ fn validate_run(
 }
 
 #[cfg(windows)]
-fn powershell_script(root: &Path, manager: &str, name: &str) -> String {
+const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(windows)]
+const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+#[cfg(windows)]
+fn display_directory(root: &Path) -> String {
     let raw = root.to_string_lossy();
-    let directory = if let Some(unc) = raw.strip_prefix("\\\\?\\UNC\\") {
+    if let Some(unc) = raw.strip_prefix("\\\\?\\UNC\\") {
         format!("\\\\{unc}")
     } else {
         raw.strip_prefix("\\\\?\\").unwrap_or(&raw).to_owned()
-    };
+    }
+}
+
+#[cfg(windows)]
+fn powershell_executable() -> String {
+    std::env::var_os("SystemRoot")
+        .map(|root| {
+            std::path::PathBuf::from(root).join("System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+        })
+        .filter(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "powershell.exe".to_owned())
+}
+
+#[cfg(windows)]
+fn powershell_script(root: &Path, manager: &str, name: &str) -> String {
+    let directory = display_directory(root);
     let executable = if manager == "bun" {
         "bun.exe".to_owned()
     } else {
@@ -149,9 +177,21 @@ fn powershell_script(root: &Path, manager: &str, name: &str) -> String {
 }
 
 #[cfg(windows)]
-fn terminal_command(root: &Path, manager: &str, name: &str) -> Command {
+fn encoded_powershell_args(script: &str, keep_open: bool) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let encoded = STANDARD.encode(bytes);
+    if keep_open {
+        format!("-NoLogo -NoProfile -NoExit -EncodedCommand {encoded}")
+    } else {
+        format!("-NoLogo -NoProfile -EncodedCommand {encoded}")
+    }
+}
+
+#[cfg(windows)]
+fn terminal_command_with_flags(root: &Path, manager: &str, name: &str, flags: u32) -> Command {
     use std::os::windows::process::CommandExt;
-    let mut command = Command::new("powershell.exe");
+    let mut command = Command::new(powershell_executable());
     command
         .args([
             "-NoLogo",
@@ -161,8 +201,108 @@ fn terminal_command(root: &Path, manager: &str, name: &str) -> Command {
             &powershell_script(root, manager, name),
         ])
         .current_dir(root)
-        .creation_flags(0x00000010);
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(flags);
     command
+}
+
+#[cfg(windows)]
+fn terminal_command(root: &Path, manager: &str, name: &str) -> Command {
+    terminal_command_with_flags(
+        root,
+        manager,
+        name,
+        CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+    )
+}
+
+#[cfg(windows)]
+fn launch_via_desktop_shell(
+    executable: &str,
+    arguments: &str,
+    directory: &str,
+    show_cmd: i32,
+) -> Result<(), String> {
+    use windows::{
+        core::{Interface, BSTR},
+        Win32::{
+            Foundation::RPC_E_CHANGED_MODE,
+            System::{
+                Com::{
+                    CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch, IServiceProvider,
+                    CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED,
+                },
+                Variant::VARIANT,
+            },
+            UI::Shell::{
+                IShellBrowser, IShellDispatch2, IShellFolderViewDual, IShellWindows,
+                SID_STopLevelBrowser, ShellWindows, SVGIO_BACKGROUND, SWC_DESKTOP,
+                SWFO_NEEDDISPATCH,
+            },
+        },
+    };
+
+    struct ComGuard(bool);
+    impl Drop for ComGuard {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    // Ask explorer.exe's desktop shell view to launch the terminal so the child
+    // is parented by explorer.exe and does not inherit easygit's process tree or Job Object.
+    let init = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let should_uninit = if init.is_ok() {
+        true
+    } else if init == RPC_E_CHANGED_MODE {
+        false
+    } else {
+        return Err(format!("无法初始化 Windows Shell COM：{init:?}"));
+    };
+    let _com_guard = ComGuard(should_uninit);
+
+    unsafe {
+        let shell_windows: IShellWindows =
+            CoCreateInstance(&ShellWindows, None, CLSCTX_LOCAL_SERVER)
+                .map_err(|error| error.to_string())?;
+        let mut hwnd = 0i32;
+        let empty = VARIANT::default();
+        let desktop = shell_windows
+            .FindWindowSW(&empty, &empty, SWC_DESKTOP, &mut hwnd, SWFO_NEEDDISPATCH)
+            .map_err(|error| error.to_string())?;
+        let service_provider: IServiceProvider =
+            desktop.cast().map_err(|error| error.to_string())?;
+        let shell_browser: IShellBrowser = service_provider
+            .QueryService(&SID_STopLevelBrowser)
+            .map_err(|error| error.to_string())?;
+        let shell_view = shell_browser
+            .QueryActiveShellView()
+            .map_err(|error| error.to_string())?;
+        let background: IDispatch = shell_view
+            .GetItemObject(SVGIO_BACKGROUND)
+            .map_err(|error| error.to_string())?;
+        let folder_view: IShellFolderViewDual =
+            background.cast().map_err(|error| error.to_string())?;
+        let app_dispatch = folder_view
+            .Application()
+            .map_err(|error| error.to_string())?;
+        let shell_dispatch: IShellDispatch2 =
+            app_dispatch.cast().map_err(|error| error.to_string())?;
+        shell_dispatch
+            .ShellExecute(
+                &BSTR::from(executable),
+                &VARIANT::from(arguments),
+                &VARIANT::from(directory),
+                &VARIANT::from("open"),
+                &VARIANT::from(show_cmd),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -179,10 +319,31 @@ fn shell_script(root: &Path, manager: &str, name: &str) -> String {
 fn launch_terminal(root: &Path, manager: &str, name: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        terminal_command(root, manager, name)
-            .spawn()
-            .map(|_| ())
-            .map_err(|error| format!("无法打开 PowerShell 终端：{error}"))
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let script = powershell_script(root, manager, name);
+        let args = encoded_powershell_args(&script, true);
+        let directory = display_directory(root);
+        let executable = powershell_executable();
+        if launch_via_desktop_shell(&executable, &args, &directory, SW_SHOWNORMAL.0).is_ok() {
+            return Ok(());
+        }
+        match terminal_command(root, manager, name).spawn() {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                // Fall back when the current Job Object forbids CREATE_BREAKAWAY_FROM_JOB
+                // and no desktop Explorer shell is available.
+                terminal_command_with_flags(
+                    root,
+                    manager,
+                    name,
+                    CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
+                )
+                .spawn()
+                .map(|_| ())
+                .map_err(|fallback| format!("无法打开 PowerShell 终端：{fallback}"))
+            }
+            Err(error) => Err(format!("无法打开 PowerShell 终端：{error}")),
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -192,6 +353,9 @@ fn launch_terminal(root: &Path, manager: &str, name: &str) -> Result<(), String>
             format!("tell application \"Terminal\"\nactivate\ndo script \"{escaped}\"\nend tell");
         Command::new("osascript")
             .args(["-e", &command])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .map(|_| ())
             .map_err(|error| format!("无法打开终端：{error}"))
@@ -209,6 +373,9 @@ fn launch_terminal(root: &Path, manager: &str, name: &str) -> Result<(), String>
             match command
                 .args(["sh", "-c", &script])
                 .current_dir(root)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn()
             {
                 Ok(_) => return Ok(()),
@@ -400,6 +567,97 @@ mod tests {
         assert_eq!(
             Path::new(&actual).canonicalize().unwrap(),
             root.canonicalize().unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn encoded_powershell_args_roundtrip_unicode_and_special_characters() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let script = powershell_script(Path::new("C:\\项目\\O'Brien & demo"), "pnpm", "dev:local");
+        let args = encoded_powershell_args(&script, true);
+        let encoded = args
+            .strip_prefix("-NoLogo -NoProfile -NoExit -EncodedCommand ")
+            .unwrap();
+        let bytes = STANDARD.decode(encoded).unwrap();
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        assert_eq!(String::from_utf16(&units).unwrap(), script);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn desktop_shell_launcher_detaches_from_strict_kill_on_close_job() {
+        // Fixture mode executed inside a strict KILL_ON_JOB_CLOSE Job Object.
+        if let Ok(marker) = std::env::var("EASYGIT_DETACH_TEST_MARKER") {
+            let directory = std::env::var("EASYGIT_DETACH_TEST_DIR").unwrap();
+            let escaped = marker.replace('\'', "''");
+            let script = format!(
+                "Start-Sleep -Milliseconds 2000; [System.IO.File]::WriteAllText('{escaped}', 'survived')"
+            );
+            let args = encoded_powershell_args(&script, false);
+            if launch_via_desktop_shell(&powershell_executable(), &args, &directory, 0).is_err() {
+                fs::write(format!("{marker}.unsupported"), "unsupported").unwrap();
+                return;
+            }
+            fs::write(format!("{marker}.launched"), "launched").unwrap();
+            // Stay alive until the parent closes the strict Job Object.
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            return;
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("detached-survived.txt");
+        let launched = Path::new(&format!("{}.launched", marker.display())).to_path_buf();
+        let unsupported = Path::new(&format!("{}.unsupported", marker.display())).to_path_buf();
+        let mut parent = Command::new(std::env::current_exe().unwrap());
+        parent
+            .args([
+                "--exact",
+                "project::tests::desktop_shell_launcher_detaches_from_strict_kill_on_close_job",
+                "--nocapture",
+            ])
+            .env("EASYGIT_DETACH_TEST_MARKER", &marker)
+            .env(
+                "EASYGIT_DETACH_TEST_DIR",
+                display_directory(directory.path()),
+            )
+            .stdin(Stdio::null());
+        {
+            use std::os::windows::process::CommandExt;
+            parent.creation_flags(0x0800_0000);
+        }
+        // output_with_timeout assigns the child to a strict KILL_ON_JOB_CLOSE Job Object
+        // (without BREAKAWAY_OK) and terminates the Job when the timeout expires.
+        let outcome = crate::process::output_with_timeout(
+            &mut parent,
+            std::time::Duration::from_millis(1200),
+        );
+        if unsupported.exists() {
+            // Headless environment (e.g. CI without an Explorer desktop shell).
+            return;
+        }
+        let error = outcome.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            launched.exists(),
+            "parent fixture must finish launching via Explorer before Job termination"
+        );
+        assert!(
+            !marker.exists(),
+            "detached process should still be sleeping when the parent Job is terminated"
+        );
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert_eq!(
+            fs::read_to_string(&marker).unwrap_or_default(),
+            "survived",
+            "terminal launched via desktop shell must survive parent Job termination"
         );
     }
 }

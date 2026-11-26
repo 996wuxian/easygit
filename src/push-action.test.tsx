@@ -105,7 +105,7 @@ describe('项目远程状态展示', () => {
     expect(button.textContent).toBe('正在获取');
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.disabled).toBe(true);
-    expect(host.querySelector<HTMLButtonElement>('[aria-label="刷新仓库"]')!.disabled).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="项目笔记"]')!.disabled).toBe(false);
     expect(host.querySelector<HTMLButtonElement>('[aria-label="打开仓库 Alpha"]')!.disabled).toBe(false);
     const latest = { ...local, behind: 1, upstream: { name: 'origin/main', hash: 'remote-tip' }, commits: [{ ...localCommit, hash: 'remote-tip', shortHash: 'remote', subject: 'New remote commit', parents: ['abc123'], refs: [{ name: 'origin/main', remote: true }], local: false }, localCommit], branches: [...local.branches, { name: 'origin/feature', current: false, remote: true, lastCommitDate: date, head: 'remote-tip' }] };
     vi.mocked(git.open).mockResolvedValue(latest);

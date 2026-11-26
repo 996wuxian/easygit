@@ -24,7 +24,7 @@ async function render(count = projects.length) {
   localStorage.setItem('esaygit.recent.v1', JSON.stringify(projects.slice(0, count)));
   await act(async () => root.render(<App onReady={() => {}} />));
 }
-function drawer() { return host.querySelector<HTMLElement>('[aria-label="项目展开区域"]'); }
+function repoBar() { return host.querySelector<HTMLElement>('[aria-label="仓库列表"]')!; }
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); localStorage.clear();
@@ -35,70 +35,81 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
-describe('侧栏项目展开区域', () => {
-  it('少于 6 个项目时不显示展开按钮', async () => {
+describe('顶部横向项目列表', () => {
+  it('位于内容页上方而非左侧工具栏，并直接展示完整项目名称', async () => {
     await render(5);
-    expect(host.querySelector('[aria-label="展开项目列表"]')).toBeNull();
-    expect(host.querySelectorAll('.repository-item')).toHaveLength(5);
-    expect(drawer()).toBeNull();
+    expect(host.querySelector('.sidebar [aria-label="仓库列表"]')).toBeNull();
+    expect(repoBar().closest('.workspace-pane')).not.toBeNull();
+    expect(repoBar().nextElementSibling).toBe(host.querySelector('.main-scroll'));
+    const items = repoBar().querySelectorAll('.repository-item');
+    expect(items).toHaveLength(5);
+    expect(repoBar().textContent).toContain('Project 1');
+    expect(repoBar().textContent).toContain('Project 5');
   });
-  it('恰好 6 个项目时也显示入口并可展开全部项目', async () => {
-    await render(6); await click('展开项目列表');
-    expect(drawer()?.querySelectorAll('.repository-expanded-item')).toHaveLength(6);
-    expect(button('收起项目列表').getAttribute('aria-expanded')).toBe('true');
-  });
-  it('超过 6 个时在列表边缘提供展开入口，展开区归属同一侧栏并显示全部名称', async () => {
+
+  it('可横向切换全部项目，选中状态同步且保留超过 8 个项目记录', async () => {
     await render();
-    const trigger = button('展开项目列表');
-    expect(trigger.closest('.repository-list-area')).not.toBeNull();
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    await click('展开项目列表');
-    expect(drawer()?.parentElement).toBe(host.querySelector('.sidebar'));
-    expect(drawer()?.querySelectorAll('.repository-expanded-item')).toHaveLength(9);
-    expect(drawer()?.textContent).toContain('Project 9');
-    expect(button('收起项目列表').getAttribute('aria-controls')).toBe(drawer()?.id);
-    await click('关闭项目展开区域');
-    expect(drawer()).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-  });
-  it('可从展开区切换项目，选中状态同步且打开项目后保留超过 8 个项目记录', async () => {
-    await render(); await click('展开项目列表');
-    await click('切换到项目 Project 9');
+    expect(repoBar().querySelectorAll('.repository-item')).toHaveLength(9);
+    await click('打开仓库 Project 9');
     expect(git.open).toHaveBeenCalledWith(projects[8].path);
-    expect(button('切换到项目 Project 9').getAttribute('aria-current')).toBe('page');
     expect(button('打开仓库 Project 9').classList.contains('selected')).toBe(true);
+    expect(button('打开仓库 Project 9').getAttribute('aria-current')).toBe('page');
     expect(host.querySelector('[aria-label="当前项目与分支"]')?.textContent).toContain('Project 9');
     const saved = JSON.parse(localStorage.getItem('esaygit.recent.v1')!);
     expect(saved).toHaveLength(9);
     expect(saved).toEqual(expect.arrayContaining([projects[0], projects[8]]));
   });
-  it('支持 Escape、外部点击和重复点击按钮收起', async () => {
-    await render(); await click('展开项目列表');
-    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
-    expect(drawer()).toBeNull();
-    expect(document.activeElement).toBe(button('展开项目列表'));
-    await click('展开项目列表');
-    await act(async () => host.querySelector('.main-scroll')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
-    expect(drawer()).toBeNull();
-    await click('展开项目列表'); await click('收起项目列表');
-    expect(drawer()).toBeNull();
+
+  it('支持鼠标滚轮转换为横向滚动，且在溢出时提供左右微调按钮', async () => {
+    await render();
+    const scroller = repoBar().querySelector<HTMLDivElement>('.repository-list-scroll')!;
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 300 });
+    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 900 });
+    scroller.scrollLeft = 0;
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(button('向左滚动仓库列表').disabled).toBe(true);
+    expect(button('向右滚动仓库列表').disabled).toBe(false);
+
+    const wheel = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
+    await act(async () => {
+      scroller.dispatchEvent(wheel);
+    });
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(scroller.scrollLeft).toBe(120);
+    expect(button('向左滚动仓库列表').disabled).toBe(false);
   });
-  it('减少到 6 个时保留展开入口，低于 6 个时自动收起', async () => {
-    await render(7); await click('展开项目列表');
-    await click('移除工作区 Project 7'); await click('确认移除');
-    expect(host.querySelectorAll('.repository-item')).toHaveLength(6);
-    expect(host.querySelector('.repository-expand-toggle')).not.toBeNull();
-    await click('移除工作区 Project 6'); await click('确认移除');
-    expect(host.querySelectorAll('.repository-item')).toHaveLength(5);
-    expect(drawer()).toBeNull();
-    expect(host.querySelector('.repository-expand-toggle')).toBeNull();
+
+  it('选中超出可视区域的项目时自动将其完整滚入可视区域', async () => {
+    await render();
+    const scroller = repoBar().querySelector<HTMLDivElement>('.repository-list-scroll')!;
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 300 });
+    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 1200 });
+    scroller.scrollLeft = 0;
+    const entries = Array.from(repoBar().querySelectorAll<HTMLElement>('.repository-entry'));
+    entries.forEach((entry, index) => {
+      Object.defineProperty(entry, 'offsetLeft', { configurable: true, value: index * 120 });
+      Object.defineProperty(entry, 'offsetWidth', { configurable: true, value: 112 });
+    });
+
+    await click('打开仓库 Project 9');
+    expect(entries[8].classList.contains('selected')).toBe(true);
+    expect(scroller.scrollLeft).toBeGreaterThanOrEqual(8 * 120 + 112 - 300);
+
+    await click('打开仓库 Project 1');
+    expect(entries[0].classList.contains('selected')).toBe(true);
+    expect(scroller.scrollLeft).toBe(0);
   });
-  it('切换项目期间禁用展开区项目行，完成后恢复', async () => {
+
+  it('切换项目期间禁用项目按钮，完成后恢复', async () => {
     let finish!: (value: ReturnType<typeof emptyRepository>) => void;
     vi.mocked(git.open).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    await render(); await click('展开项目列表'); await click('切换到项目 Project 1');
-    expect(Array.from(drawer()!.querySelectorAll<HTMLButtonElement>('.repository-expanded-item')).every(node => node.disabled)).toBe(true);
+    await render();
+    await click('打开仓库 Project 1');
+    expect(Array.from(repoBar().querySelectorAll<HTMLButtonElement>('.repository-item')).every(node => node.disabled)).toBe(true);
     await act(async () => finish({ ...emptyRepository(), ...projects[0], branch: 'main' }));
-    expect(button('切换到项目 Project 1').disabled).toBe(false);
+    expect(button('打开仓库 Project 1').disabled).toBe(false);
   });
 });

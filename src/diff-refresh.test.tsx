@@ -38,6 +38,12 @@ async function click(label: string, scope?: ParentNode) {
   await act(async () => button(label, scope).click());
 }
 
+async function refreshRepository() {
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', ctrlKey: true, bubbles: true, cancelable: true }));
+  });
+}
+
 function area() {
   const result = host.querySelector<HTMLElement>('[aria-label="文件差异"]');
   if (!result) throw new Error('找不到文件差异区域');
@@ -118,7 +124,7 @@ describe('代码差异刷新', () => {
 
     const obsolete = deferred<FileBlame>();
     blame.mockReturnValueOnce(obsolete.promise);
-    await click('刷新仓库');
+    await refreshRepository();
     await click('second.ts');
     await act(async () => obsolete.resolve(authors));
     await hover(area(), '.removed code');
@@ -159,7 +165,7 @@ describe('代码差异刷新', () => {
     const pending = deferred();
     vi.mocked(git.diff).mockReturnValueOnce(pending.promise);
 
-    await click('刷新仓库');
+    await refreshRepository();
 
     expect(scroll.getAttribute('aria-busy')).toBe('true');
     expect(scroll.querySelector('.code-lines')).toBe(code);
@@ -183,7 +189,7 @@ describe('代码差异刷新', () => {
     await openRepository();
     const obsolete = deferred();
     vi.mocked(git.diff).mockReturnValueOnce(obsolete.promise);
-    await click('刷新仓库');
+    await refreshRepository();
     const current = deferred();
     vi.mocked(git.diff).mockReturnValueOnce(current.promise);
 
@@ -220,14 +226,14 @@ describe('代码差异刷新', () => {
     const code = area().querySelector('.code-lines');
     vi.mocked(git.diff).mockRejectedValueOnce(new Error('差异读取失败'));
 
-    await click('刷新仓库');
+    await refreshRepository();
 
     expect(area().querySelector('.code-lines')).toBe(code);
     expect(area().textContent).toContain('visible content');
     expect(host.querySelector('.diff-refresh-error')?.getAttribute('title')).toContain('差异读取失败');
     expect(area().getAttribute('aria-busy')).toBe('false');
     vi.mocked(git.diff).mockResolvedValueOnce(updatedDiff);
-    await click('刷新仓库');
+    await refreshRepository();
     expect(area().textContent).toContain('updated content');
     expect(host.querySelector('.diff-refresh-error')).toBeNull();
   });

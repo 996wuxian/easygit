@@ -156,7 +156,9 @@ type RepoLocks = Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>;
 static REPO_LOCKS: OnceLock<RepoLocks> = OnceLock::new();
 static GIT_VERSION: OnceLock<String> = OnceLock::new();
 #[cfg(test)]
-static GIT_COMMAND_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    static GIT_COMMAND_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 fn command(root: Option<&Path>) -> Command {
     let mut command = Command::new("git");
@@ -187,7 +189,7 @@ const STDERR_LIMIT: usize = 1024 * 1024;
 
 fn output_mode(root: Option<&Path>, args: &[&str], mode: OutputMode) -> Result<Output, String> {
     #[cfg(test)]
-    GIT_COMMAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    GIT_COMMAND_COUNT.with(|count| count.set(count.get() + 1));
     let mut command = command(root);
     command.args(args);
     let timeout = Duration::from_secs(60);
@@ -400,10 +402,38 @@ fn snapshot_files(root: &Path) -> Result<Vec<GitFile>, String> {
     Ok(files)
 }
 
+fn spawn_snapshot_task<'scope, 'env, T: Send + 'scope>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    task: impl FnOnce() -> Result<T, String> + Send + 'scope,
+) -> std::thread::ScopedJoinHandle<'scope, (Result<T, String>, usize)> {
+    scope.spawn(move || {
+        #[cfg(test)]
+        GIT_COMMAND_COUNT.with(|count| count.set(0));
+        let result = task();
+        #[cfg(test)]
+        let commands = GIT_COMMAND_COUNT.with(|count| count.replace(0));
+        #[cfg(not(test))]
+        let commands = 0;
+        (result, commands)
+    })
+}
+
+fn join_snapshot_task<T>(
+    handle: std::thread::ScopedJoinHandle<'_, (Result<T, String>, usize)>,
+    panic_message: &str,
+) -> Result<T, String> {
+    let (result, commands) = handle.join().map_err(|_| panic_message.to_owned())?;
+    #[cfg(test)]
+    GIT_COMMAND_COUNT.with(|count| count.set(count.get() + commands));
+    #[cfg(not(test))]
+    let _ = commands;
+    result
+}
+
 fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
     let (files, branch_data, remote, stash_data, git_dir_text) = std::thread::scope(|scope| {
-        let files_task = scope.spawn(|| snapshot_files(root));
-        let branch_task = scope.spawn(|| {
+        let files_task = spawn_snapshot_task(scope, || snapshot_files(root));
+        let branch_task = spawn_snapshot_task(scope, || {
             run_text(
                 root,
                 &[
@@ -415,7 +445,7 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 ],
             )
         });
-        let remote_task = scope.spawn(|| {
+        let remote_task = spawn_snapshot_task(scope, || {
             let remote_names = run_text(root, &["remote"])?;
             let remote_name = remote_names
                 .lines()
@@ -426,21 +456,14 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
                 None => Ok(None),
             }
         });
-        let stash_task = scope.spawn(|| run_text(root, &["stash", "list", "--format=%H"]));
+        let stash_task =
+            spawn_snapshot_task(scope, || run_text(root, &["stash", "list", "--format=%H"]));
         let git_dir_text = run_text(root, &["rev-parse", "--absolute-git-dir"]);
 
-        let files = files_task
-            .join()
-            .map_err(|_| "读取仓库文件状态失败。".to_owned())??;
-        let branch_data = branch_task
-            .join()
-            .map_err(|_| "读取仓库分支列表失败。".to_owned())??;
-        let remote = remote_task
-            .join()
-            .map_err(|_| "读取远程仓库配置失败。".to_owned())??;
-        let stash_data = stash_task
-            .join()
-            .map_err(|_| "读取仓库暂存记录失败。".to_owned())??;
+        let files = join_snapshot_task(files_task, "读取仓库文件状态失败。")?;
+        let branch_data = join_snapshot_task(branch_task, "读取仓库分支列表失败。")?;
+        let remote = join_snapshot_task(remote_task, "读取远程仓库配置失败。")?;
+        let stash_data = join_snapshot_task(stash_task, "读取仓库暂存记录失败。")?;
         Ok::<_, String>((files, branch_data, remote, stash_data, git_dir_text?))
     })?;
     let branch_refs: Vec<Vec<&str>> = branch_data
@@ -521,17 +544,15 @@ fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
     let has_upstream = upstream.is_some();
     let (commits, counts) = if has_upstream {
         std::thread::scope(|scope| {
-            let counts_task = scope.spawn(|| {
+            let counts_task = spawn_snapshot_task(scope, || {
                 optional_text(
                     root,
                     &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
                 )
             });
             let commits = history::read_history(root, head.as_deref(), &branch, upstream.as_ref())?;
-            let counts = counts_task
-                .join()
-                .map_err(|_| "读取分支同步计数失败。".to_owned())??
-                .unwrap_or_default();
+            let counts =
+                join_snapshot_task(counts_task, "读取分支同步计数失败。")?.unwrap_or_default();
             Ok::<_, String>((commits, counts))
         })?
     } else {
