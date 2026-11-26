@@ -580,10 +580,9 @@ mod tests {
             .strip_prefix("-NoLogo -NoProfile -NoExit -EncodedCommand ")
             .unwrap();
         let bytes = STANDARD.decode(encoded).unwrap();
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect();
+        let (pairs, remainder) = bytes.as_chunks::<2>();
+        assert!(remainder.is_empty());
+        let units: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
         assert_eq!(String::from_utf16(&units).unwrap(), script);
     }
 
