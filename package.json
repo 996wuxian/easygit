@@ -13,17 +13,16 @@
     "url": "https://github.com/996wuxian/easygit.git"
   },
   "scripts": {
+    "tauri:dev": "tauri dev",
+    "tauri:build": "node scripts/sync-version.mjs && tauri build",
+    "sync:version": "node scripts/sync-version.mjs",
+    "version": "node scripts/sync-version.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "node scripts/sync-version.mjs && tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:release": "node --test scripts/sync-version.check.mjs",
-    "check": "npm run test && npm run build",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "node scripts/sync-version.mjs && tauri build",
-    "sync:version": "node scripts/sync-version.mjs",
-    "version": "node scripts/sync-version.mjs"
+    "check": "npm run test && npm run build"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
