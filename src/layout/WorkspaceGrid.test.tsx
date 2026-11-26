@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { WorkspaceGrid } from './WorkspaceGrid';
 import { usePanelLayout } from './usePanelLayout';
-import { PANEL_LAYOUT_STORAGE_KEY } from './model';
+import { PANEL_LAYOUT_STORAGE_KEY, type PanelId } from './model';
 
 let host: HTMLDivElement; let root: Root;
 let renders = 0;
@@ -27,7 +27,8 @@ function measure(id: string, left: number, top: number, width: number, height: n
 }
 function Harness() {
   const panels = usePanelLayout();
-  return <WorkspaceGrid layout={panels.layout} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={() => <Content />} />;
+  const [maximized, setMaximized] = useState<PanelId | null>(null);
+  return <WorkspaceGrid layout={panels.layout} maximized={maximized} onMaximizedChange={setMaximized} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={() => <Content />} />;
 }
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); localStorage.clear();

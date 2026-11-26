@@ -57,6 +57,8 @@ interface DragSession {
 
 export interface WorkspaceGridProps {
   layout: PanelLayout;
+  maximized: PanelId | null;
+  onMaximizedChange: (id: PanelId | null) => void;
   onMove: (active: PanelId, target: PanelId) => void;
   onResize?: (id: PanelId, size: PanelSize | null) => void;
   renderPanel: (id: PanelId) => ReactNode;
@@ -65,8 +67,9 @@ export interface WorkspaceGridProps {
   className?: string;
 }
 
-export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActions, panelTitles, className = "" }: WorkspaceGridProps) {
+export function WorkspaceGrid({ layout, maximized, onMaximizedChange, onMove, onResize, renderPanel, panelActions, panelTitles, className = "" }: WorkspaceGridProps) {
   const ids = visiblePanelIds(layout);
+  const maximizedIsHidden = maximized !== null && !ids.includes(maximized);
   const [drag, setDrag] = useState<{ id: PanelId; target: PanelId | null; x: number; y: number } | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const session = useRef<DragSession | null>(null);
@@ -75,14 +78,13 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
   const gridRef = useRef<HTMLDivElement>(null);
   const dragPreview = useRef<HTMLDivElement>(null);
   const dragFrame = useRef<number | null>(null);
-  const [maximized, setMaximized] = useState<PanelId | null>(null);
   const resize = usePanelResize(gridRef, onResize);
   moveRef.current = onMove;
   idsRef.current = ids;
 
   useEffect(() => {
-    if (maximized && !ids.includes(maximized)) setMaximized(null);
-  }, [maximized, ids.join(',')]);
+    if (maximizedIsHidden) onMaximizedChange(null);
+  }, [maximizedIsHidden, onMaximizedChange]);
   useEffect(() => {
     if (!maximized) return;
     const panel = gridRef.current?.querySelector<HTMLElement>(`[data-eg-panel="${maximized}"]`);
@@ -91,7 +93,7 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
       if (event.defaultPrevented) return;
       const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
       if (dialogs.length && dialogs.item(dialogs.length - 1) !== panel) return;
-      if (event.key === 'Escape') { event.preventDefault(); setMaximized(null); }
+      if (event.key === 'Escape') { event.preventDefault(); onMaximizedChange(null); }
       if (event.key === 'Tab' && panel) {
         const controls = Array.from(panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable="true"], [tabindex="0"]')).filter(node => node.getClientRects().length);
         const first = controls[0]; const last = controls.at(-1);
@@ -99,10 +101,10 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     };
-    panel?.querySelector<HTMLButtonElement>('.eg-panel-maximize')?.focus();
+    panel?.querySelector<HTMLButtonElement>('.eg-panel-maximize')?.focus({ preventScroll: true });
     window.addEventListener('keydown', keyDown);
     return () => { window.removeEventListener('keydown', keyDown); previous?.focus({ preventScroll: true }); };
-  }, [maximized]);
+  }, [maximized, onMaximizedChange]);
 
   useEffect(() => {
     const cancel = () => {
@@ -180,7 +182,7 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
 
   return (
     <>
-      {maximized && <div className="eg-panel-backdrop" onClick={() => setMaximized(null)} />}
+      {maximized && <div className="eg-panel-backdrop" onClick={() => onMaximizedChange(null)} />}
       <div className={`eg-workspace-grid ${className}`} ref={gridRef}>
         {ids.map((id, index) => {
           const Icon = panelIcons[id];
@@ -206,7 +208,7 @@ export function WorkspaceGrid({ layout, onMove, onResize, renderPanel, panelActi
                 </div>
                 <div className="eg-panel-header-actions">
                   {panelActions?.(id)}
-                  <button className="icon-button eg-panel-maximize" aria-label={`${full ? '还原' : '最大化'}${title}面板`} title={full ? '还原面板 · Esc' : '最大化面板'} aria-pressed={full} onClick={() => setMaximized(full ? null : id)}>{full ? <IconMinimize size={16} /> : <IconMaximize size={16} />}</button>
+                  <button className="icon-button eg-panel-maximize" aria-label={`${full ? '还原' : '最大化'}${title}面板`} title={full ? '还原面板 · Esc' : '最大化面板'} aria-pressed={full} onClick={() => onMaximizedChange(full ? null : id)}>{full ? <IconMinimize size={16} /> : <IconMaximize size={16} />}</button>
                   <button
                     className="eg-panel-drag-handle"
                     type="button"

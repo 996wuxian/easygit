@@ -56,11 +56,11 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 
 describe('侧栏直接打开隐藏面板', () => {
   it('自动显示、定位并保存面板，不打开布局对话框且保留顺序和尺寸', async () => {
-    const layout = { ...defaultPanelLayout(), hidden: ['changes', 'diff', 'branches', 'commits', 'files', 'activity'], sizes: { diff: { span: 8, height: 460 } } };
+    const layout = { ...defaultPanelLayout(), hidden: ['changes', 'diff', 'branches', 'commits', 'activity'], sizes: { diff: { span: 8, height: 460 } } };
     localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
     await openWorkspace();
     expect(Array.from(host.querySelectorAll('.main-nav button')).map(node => node.getAttribute('aria-label'))).toEqual(['工作区变更', '代码差异', '分支', '提交记录', '项目文件', '项目笔记']);
-    for (const [label, id] of [['工作区变更', 'changes'], ['代码差异', 'diff'], ['分支', 'branches'], ['提交记录', 'commits'], ['项目文件', 'files']]) {
+    for (const [label, id] of [['工作区变更', 'changes'], ['代码差异', 'diff'], ['分支', 'branches'], ['提交记录', 'commits']]) {
       expect(host.querySelector(`[data-eg-panel="${id}"]`)).toBeNull();
       await click(label);
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 95)); });
@@ -71,7 +71,44 @@ describe('侧栏直接打开隐藏面板', () => {
     }
     const saved = JSON.parse(localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY)!);
     expect(saved.hidden).toEqual(['activity']); expect(saved.order).toEqual(layout.order); expect(saved.sizes).toEqual(layout.sizes);
-    await click('项目文件'); expect(JSON.parse(localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY)!).hidden).toEqual(['activity']);
+  });
+
+  it('一键显示并最大化项目文件，关闭文件编辑器后可按 Esc 还原', async () => {
+    const layout = { ...defaultPanelLayout(), hidden: ['files', 'activity'], sizes: { files: { span: 6, height: 420 } } };
+    localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+    vi.mocked(project.files).mockResolvedValue({ entries: [{ name: 'README.md', path: 'README.md', directory: false, blocked: false, ignored: false }], truncated: false });
+    const readFile = vi.spyOn(project, 'readFile').mockResolvedValue({ content: 'Project', revision: '1', bom: false, lineEnding: 'lf', reason: null });
+    await openWorkspace();
+
+    const selector = '[data-eg-panel="files"]';
+    expect(host.querySelector(selector)).toBeNull();
+    const shortcut = button('项目文件');
+    shortcut.focus();
+    await click('项目文件');
+    const panel = host.querySelector(`${selector}.eg-panel--maximized`);
+    expect(panel?.getAttribute('aria-modal')).toBe('true');
+    expect(shortcut.getAttribute('aria-current')).toBe('page');
+    expect(document.activeElement).toBe(button('还原项目文件面板'));
+
+    await click('打开文件 README.md');
+    expect(readFile).toHaveBeenCalledWith(workspace.path, 'README.md');
+    expect(document.querySelector('[aria-label="项目文件编辑器"]')).not.toBeNull();
+    const escape = () => act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await escape();
+    expect(document.querySelector('[aria-label="项目文件编辑器"]')).toBeNull();
+    expect(host.querySelector('.eg-panel--maximized')).toBe(panel);
+    await escape();
+    expect(host.querySelector('.eg-panel--maximized')).toBeNull();
+    expect(host.querySelector(selector)).toBe(panel);
+    expect(document.activeElement).toBe(shortcut);
+    expect(JSON.parse(localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY)!)).toEqual({ ...layout, hidden: ['activity'] });
+  });
+
+  it('未打开仓库时从项目文件入口打开仓库选择', async () => {
+    await render();
+    await click('项目文件');
+    expect(host.querySelector('[role="dialog"][aria-label="打开一个 Git 仓库"]')).not.toBeNull();
+    expect(project.files).not.toHaveBeenCalled();
   });
 });
 
