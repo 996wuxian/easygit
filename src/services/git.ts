@@ -69,6 +69,13 @@ export interface FileComparison {
   originalExists: boolean;
   modifiedExists: boolean;
 }
+export interface BlameCommit { hash: string; author: string; summary: string; time: number | null }
+export interface SideBlame {
+  source: string;
+  ranges: { start: number; count: number; commit: BlameCommit | null }[];
+  localTime: number | null;
+}
+export interface FileBlame { original: SideBlame | null; modified: SideBlame | null }
 export interface DiffBlock {
   originalStart: number; modifiedStart: number;
   removed: string[]; added: string[];
@@ -102,6 +109,7 @@ export const git = {
   pickDirectory: (defaultPath: string) => invokeCommand<string | null>('pick_repository_directory', { defaultPath: defaultPath.trim() || null }),
   openDirectory: (path: string) => invokeCommand<void>('open_repository_directory', { path }),
   diff: (path: string, file: string, staged: boolean) => invokeCommand<string>('read_diff', { path, file, staged }),
+  blame: (path: string, file: string, staged: boolean) => invokeCommand<FileBlame>('read_file_blame', { path, file, staged }),
   comparison: (path: string, file: string, staged: boolean) => invokeCommand<FileComparison>('read_file_comparison', { path, file, staged }),
   stagedDiff: (path: string) => invokeCommand<string>('read_staged_diff', { path }),
   stage: (path: string, files: string[]) => invokeCommand<RepositorySnapshot>('stage_files', { path, files }),

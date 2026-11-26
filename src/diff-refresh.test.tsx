@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { emptyRepository, git, type FileComparison, type GitFile } from './services/git';
+import { emptyRepository, git, type FileBlame, type FileComparison, type GitFile } from './services/git';
 
 const alpha = { name: 'Alpha', path: 'X:/Projects/Alpha' };
 const beta = { name: 'Beta', path: 'X:/Projects/Beta' };
@@ -72,6 +72,59 @@ afterEach(async () => {
 });
 
 describe('代码差异刷新', () => {
+  it('悬停或点击代码行时显示作者，切换文件后忽略旧请求', async () => {
+    const pending = deferred<FileBlame>();
+    const blame = vi.spyOn(git, 'blame').mockReturnValueOnce(pending.promise).mockResolvedValue({ original: null, modified: null });
+    vi.spyOn(git, 'comparison').mockResolvedValue({ diff: originalDiff, unchanged: null, binary: false, originalExists: true, modifiedExists: true });
+    await openRepository();
+    expect(area().textContent).toContain('visible content');
+    const tooltip = () => document.querySelector('.diff-line-blame');
+    const hover = (scope: ParentNode, selector: string) => act(async () => {
+      scope.querySelector(selector)!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(tooltip()).toBeNull();
+
+    const now = Math.floor(Date.now() / 1000);
+    const authors: FileBlame = {
+      original: { source: 'before', localTime: null, ranges: [{ start: 1, count: 1, commit: { hash: 'abcd1234abcd', author: '陈晨', summary: '初始化', time: now - 3900 } }] },
+      modified: { source: 'visible content', localTime: now - 670, ranges: [{ start: 1, count: 1, commit: null }] },
+    };
+    await act(async () => pending.resolve(authors));
+    expect(tooltip()).toBeNull();
+    await hover(area(), '.removed code');
+    expect(tooltip()?.textContent).toContain('陈晨1小时前');
+    expect(tooltip()?.textContent).toContain('abcd1234初始化');
+    await hover(area(), '.added code');
+    expect(tooltip()?.textContent).toContain('你11分钟前');
+    expect(tooltip()?.textContent).toContain('未提交的更改');
+    await act(async () => area().querySelector('.added code')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })));
+    expect(tooltip()).toBeNull();
+
+    await click('展开代码差异');
+    const dialog = document.querySelector('.diff-fullscreen-dialog')!;
+    await hover(dialog, '.split-source-original .source-line.removed code');
+    expect(tooltip()?.textContent).toContain('陈晨');
+    const editedLine = dialog.querySelector<HTMLElement>('.split-source-modified .source-line.added code')!;
+    await hover(dialog, '.split-source-modified .source-line.added code');
+    await act(async () => editedLine.click());
+    await act(async () => editedLine.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })));
+    expect(tooltip()?.textContent).toContain('你11分钟前');
+    await click('统一视图', dialog);
+    expect(tooltip()).toBeNull();
+    await hover(dialog, '.removed code');
+    expect(tooltip()?.textContent).toContain('陈晨');
+    expect(blame).toHaveBeenCalledTimes(1);
+    await click('退出全屏差异', dialog);
+
+    const obsolete = deferred<FileBlame>();
+    blame.mockReturnValueOnce(obsolete.promise);
+    await click('刷新仓库');
+    await click('second.ts');
+    await act(async () => obsolete.resolve(authors));
+    await hover(area(), '.removed code');
+    expect(tooltip()).toBeNull();
+  });
+
   it('首页文件、分支和提交列表在相同内容刷新后保留节点、焦点和滚动位置', async () => {
     const date = new Date().toISOString();
     vi.mocked(git.open).mockImplementation(async () => ({

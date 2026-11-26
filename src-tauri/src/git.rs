@@ -1,7 +1,9 @@
 use serde::Serialize;
+mod blame;
 mod branches;
 mod cherry_pick;
 mod commit_actions;
+pub use blame::{read_file_blame, FileBlame};
 pub use branches::{manage_branch, read_branch_info, BranchInfo, BranchRequest};
 pub use cherry_pick::cherry_pick;
 mod comparison;
@@ -53,7 +55,7 @@ pub use merge::{
     commit_files, merge_branches, preview_merge, MergePreview, MergeRequest, MergeResult,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Component, Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{Arc, Mutex, OnceLock},
@@ -362,11 +364,46 @@ fn parse_status(bytes: &[u8]) -> Result<Vec<GitFile>, String> {
     Ok(files)
 }
 
-fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
-    let files = parse_status(&run(
+fn snapshot_files(root: &Path) -> Result<Vec<GitFile>, String> {
+    let mut files = parse_status(&run(
         root,
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     )?)?;
+    let modified = |file: &GitFile| file.worktree_status == "M" && !file.conflicted;
+    if !files.iter().any(modified) {
+        return Ok(files);
+    }
+    // Status can flag stale stat data when the worktree is CRLF but the index
+    // was last recorded with LF. Diff verifies the content using Git's filters.
+    if let Ok(diff) = run(
+        root,
+        &[
+            "-c",
+            "diff.autorefreshindex=true",
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=none",
+            "--",
+        ],
+    ) {
+        let changed: HashSet<_> = diff.split(|byte| *byte == 0).collect();
+        files.retain_mut(|file| {
+            if modified(file) && !changed.contains(file.path.as_bytes()) {
+                file.worktree_status = " ".into();
+                file.unstaged = false;
+            }
+            file.staged || file.unstaged
+        });
+    }
+    Ok(files)
+}
+
+fn snapshot(root: &Path) -> Result<RepositorySnapshot, String> {
+    let files = snapshot_files(root)?;
     let branch_data = run_text(
         root,
         &[

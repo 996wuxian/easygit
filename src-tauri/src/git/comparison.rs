@@ -109,29 +109,51 @@ pub fn read_file_comparison(
 ) -> Result<FileComparison, String> {
     validate_files(&[file.to_owned()])?;
     with_repository(path, |root| {
-        let files = parse_status(&run(
-            root,
-            &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        )?)?;
-        let selected = files.iter().find(|entry| entry.path == file);
-        let original_path = selected
-            .and_then(|entry| {
-                (staged || entry.worktree_status == "R")
-                    .then_some(entry.old_path.as_deref())
-                    .flatten()
-            })
-            .unwrap_or(file);
-        let original = if staged {
-            head_content(root, original_path)?
-        } else {
-            index_content(root, original_path)?
-        };
-        let modified = if staged {
-            index_content(root, file)?
-        } else {
-            working_content(root, file)?
-        };
-        compare_contents(original.as_deref(), modified.as_deref())
+        let versions = read_file_versions(root, file, staged)?;
+        compare_contents(versions.original.as_deref(), versions.modified.as_deref())
+    })
+}
+
+pub(super) struct FileVersions {
+    pub original: Option<Vec<u8>>,
+    pub modified: Option<Vec<u8>>,
+    pub original_path: String,
+    pub history_path: String,
+}
+
+pub(super) fn read_file_versions(
+    root: &Path,
+    file: &str,
+    staged: bool,
+) -> Result<FileVersions, String> {
+    let files = parse_status(&run(
+        root,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )?)?;
+    let selected = files.iter().find(|entry| entry.path == file);
+    let history_path = selected
+        .and_then(|entry| entry.old_path.as_deref())
+        .unwrap_or(file);
+    let original_path = if staged || selected.is_some_and(|entry| entry.worktree_status == "R") {
+        history_path
+    } else {
+        file
+    };
+    let original = if staged {
+        head_content(root, original_path)?
+    } else {
+        index_content(root, original_path)?
+    };
+    let modified = if staged {
+        index_content(root, file)?
+    } else {
+        working_content(root, file)?
+    };
+    Ok(FileVersions {
+        original,
+        modified,
+        original_path: original_path.to_owned(),
+        history_path: history_path.to_owned(),
     })
 }
 
