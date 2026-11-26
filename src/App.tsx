@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
-import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconFolder, IconFolderOpen, IconGitBranch, IconKey, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconCheck, IconChevronDown, IconChevronRight, IconChevronUp, IconFolder, IconFolderOpen, IconGitBranch, IconKey, IconLayoutGrid, IconGitPullRequest, IconLoader2, IconMoon, IconNotes, IconPalette, IconPlus, IconRefresh, IconSearch, IconSettings, IconSun, IconX } from '@tabler/icons-react';
 import { WorkspaceGrid, usePanelLayout, PANEL_IDS, PANEL_TITLES, type PanelId } from './layout';
 import { ChangesPanel, DiffPanel, BranchesPanel, CommitsPanel, CommitSyncCounts, StashPanel, ActivityPanel, ScriptsPanel, panelIcons } from './components/Panels';
 import { WindowControls } from './components/WindowControls';
@@ -23,6 +23,7 @@ import { RepositorySetupDialog } from './components/RepositorySetupDialog';
 import { RemotesDialog } from './components/RemotesDialog';
 import { ToastStack } from './components/notifications/ToastStack';
 import { FileTree } from './components/files/FileTree';
+import { getProjectFileChanges, type ProjectFileTarget } from './components/files/fileChanges';
 import { FileEditorDialog } from './components/files/FileEditorDialog';
 import { useFileEditor } from './components/files/useFileEditor';
 import { confirmPendingChanges } from './services/pendingChanges';
@@ -107,6 +108,7 @@ export default function App({ onReady }: { onReady: () => void }) {
   const [mergeRequest, setMergeRequest] = useState<{ source: string; target: string; sourceRemote: boolean; targetRemote: boolean } | null>(null);
   const [activeNav, setActiveNav] = useState<PanelId>('changes');
   const [maximizedPanel, setMaximizedPanel] = useState<PanelId | null>(null);
+  const [projectFileTarget, setProjectFileTarget] = useState<ProjectFileTarget>();
   const [removal, setRemoval] = useState<{ workspace: RecentRepository; returnToOpen: boolean } | null>(null);
   const [sidebarOrder, setSidebarOrder] = useState(readSidebarOrder);
   const [discardConfirmation, setDiscardConfirmation] = useState<{ files: string[]; untrackedFiles: string[]; scope: 'file' | 'all' | 'selection'; overlay: boolean } | null>(null);
@@ -237,13 +239,31 @@ export default function App({ onReady }: { onReady: () => void }) {
     else if (!staged && !current.unstaged && current.staged) setStaged(true);
   }, [snapshot, selected]);
 
-  useEffect(() => { setMaximizedPanel(null); }, [snapshot.path]);
+  useEffect(() => { setMaximizedPanel(null); setProjectFileTarget(undefined); }, [snapshot.path]);
+
+  const handleMaximizedChange = useCallback((id: PanelId | null) => {
+    setMaximizedPanel(id);
+    setProjectFileTarget(undefined);
+    if (id === 'files') void repo.refresh(true);
+  }, [repo.refresh]);
+
+  const projectFileChanges = useMemo(() => maximizedPanel === 'files' ? getProjectFileChanges(snapshot.files) : undefined, [maximizedPanel, snapshot.files]);
+  const fileChangeTarget = projectFileTarget && projectFileChanges?.paths.includes(projectFileTarget.path) ? projectFileTarget : undefined;
+  function moveProjectFileChange(direction: -1 | 1) {
+    const paths = projectFileChanges?.paths;
+    if (!paths?.length) return;
+    setProjectFileTarget(current => {
+      const index = current ? paths.indexOf(current.path) : -1;
+      const next = index < 0 ? (direction > 0 ? 0 : paths.length - 1) : (index + direction + paths.length) % paths.length;
+      return { path: paths[next] };
+    });
+  }
 
   const focusPanel = (id: PanelId, maximize = false) => {
     if (!hasRepository) { setModal('open'); return; }
     panels.showPanel(id);
     setActiveNav(id);
-    if (maximize) { setMaximizedPanel(id); return; }
+    if (maximize) { handleMaximizedChange(id); return; }
     window.setTimeout(() => {
       const node = document.querySelector<HTMLElement>(`[data-eg-panel="${id}"]`);
       node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -310,9 +330,18 @@ export default function App({ onReady }: { onReady: () => void }) {
       case 'stash': return <StashPanel key={snapshot.path} snapshot={snapshot} busy={busy} onSave={repo.saveStash} onAction={repo.actOnStash} />;
       case 'activity': return <ActivityPanel activities={repo.activities} />;
       case 'scripts': return <ScriptsPanel key={snapshot.path} snapshot={snapshot} notify={notify} onCountChange={updateScriptCount} />;
-      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} refreshKey={filesRefreshKey} revision={snapshot.revision} selected={editor.document?.file} onOpen={openFile} busy={busy} onDelete={deleteProjectEntry} notify={notify} />;
+      case 'files': return <FileTree key={snapshot.path} repository={snapshot.path} files={snapshot.files} revealChanges={maximizedPanel === 'files'} changeTarget={fileChangeTarget} refreshKey={filesRefreshKey} revision={snapshot.revision} selected={editor.document?.file} onOpen={openFile} busy={busy} onDelete={deleteProjectEntry} notify={notify} />;
     }
   };
+
+  const projectFileHeading = projectFileChanges && <div className="project-file-changes">
+    <span role="status">{projectFileChanges.count ? `· ${projectFileChanges.count} 个文件修改` : '暂无文件变更'}</span>
+    {projectFileChanges.count > 0 && <div className="project-file-change-navigation" role="group" aria-label="变更文件定位" title={projectFileChanges.paths.length ? undefined : '已删除的文件可在工作区变更中查看'}>
+      <button type="button" className="icon-button" aria-label="上一个变更文件" title="上一个变更文件" disabled={!projectFileChanges.paths.length} onClick={() => moveProjectFileChange(-1)}><IconChevronUp size={15} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" aria-label="下一个变更文件" title="下一个变更文件" disabled={!projectFileChanges.paths.length} onClick={() => moveProjectFileChange(1)}><IconChevronDown size={15} aria-hidden="true" /></button>
+    </div>}
+    <span className="eg-sr-only" role="status">{fileChangeTarget?.path}</span>
+  </div>;
 
   return <div className="app-shell">
     <header className="titlebar" data-tauri-drag-region>
@@ -355,7 +384,7 @@ export default function App({ onReady }: { onReady: () => void }) {
 
         <OperationBanner key={snapshot.path} snapshot={snapshot} busy={busy} onAction={repo.actOnOperation} />
 
-        <WorkspaceGrid panelTitles={{ commits: <><span>{PANEL_TITLES.commits}</span><CommitSyncCounts snapshot={snapshot} /></>, scripts: scriptCount?.path === snapshot.path && scriptCount.count !== null ? `项目脚本 · ${scriptCount.count}` : PANEL_TITLES.scripts }} layout={panels.layout} maximized={maximizedPanel} onMaximizedChange={setMaximizedPanel} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><button className="icon-button" aria-label="配置远程仓库" title="配置远程仓库地址" disabled={busy} onClick={() => setModal('remotes')}><IconSettings size={15} /></button><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
+        <WorkspaceGrid panelTitles={{ commits: <><span>{PANEL_TITLES.commits}</span><CommitSyncCounts snapshot={snapshot} /></>, scripts: scriptCount?.path === snapshot.path && scriptCount.count !== null ? `项目脚本 · ${scriptCount.count}` : PANEL_TITLES.scripts }} panelHeadingExtras={{ files: projectFileHeading }} layout={panels.layout} maximized={maximizedPanel} onMaximizedChange={handleMaximizedChange} onMove={panels.movePanel} onResize={panels.resizePanel} renderPanel={renderPanel} panelActions={id => <>{id === 'changes' && <span className="panel-count">{snapshot.files.length}</span>}{id === 'commits' && <span className="panel-subtitle">搜索 · 分页</span>}{id === 'branches' && <><button className="icon-button" aria-label="配置远程仓库" title="配置远程仓库地址" disabled={busy} onClick={() => setModal('remotes')}><IconSettings size={15} /></button><BranchSearch key={snapshot.path} query={branchQuery} onQueryChange={query => setBranchFilter({ path: snapshot.path, query })} /><button className="icon-button panel-create-branch-button" aria-label="创建分支" title="基于当前分支创建本地分支" disabled={busy || syncing || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} onClick={() => { setBranchName(''); setModal('create-branch'); }}><IconPlus size={16} /></button><button className="text-button panel-fetch-button" aria-label="获取远程更新" aria-busy={syncing} disabled={busy || syncing || !snapshot.remote} title={syncing ? '正在后台获取远程分支和提交记录' : snapshot.remote ? '获取远程仓库更新' : '请先配置远程仓库'} onClick={() => { void repo.fetch(); }}>{syncing ? <IconRefresh size={14} className="spin" /> : <IconArrowDown size={14} />}<span className="panel-remote-label">{syncing ? '正在获取' : '获取更新'}</span></button><button className="text-button panel-pull-button" aria-label="拉取更新" disabled={busy || syncing || !snapshot.remote || !snapshot.hasUpstream || snapshot.behind === 0 || Boolean(snapshot.operation) || snapshot.files.some(file => file.conflicted)} title={!snapshot.remote ? '请先配置远程仓库' : !snapshot.hasUpstream ? '当前分支尚未设置上游分支' : snapshot.behind === 0 ? '当前分支没有待拉取的提交' : snapshot.operation ? '请先完成当前 Git 操作' : syncing ? '正在获取远程更新' : `合并 ${snapshot.upstream?.name ?? '上游分支'} 的更新`} onClick={() => { void repo.pull(); }}><IconGitPullRequest size={14} /><span className="panel-remote-label">拉取更新</span></button></>}</>} />
 
         <div className="workspace-footer"><span>{repo.gitVersion || snapshot.gitVersion}</span><span>拖动 <span className="footer-grip">⠿</span> 调整位置 · 拖动边框调整大小<span className="footer-divider">·</span><kbd>Ctrl K</kbd> 命令</span></div>
       </div> : <section className="repository-empty" aria-label="尚未打开仓库">

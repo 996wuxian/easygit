@@ -87,6 +87,8 @@ describe('侧栏直接打开隐藏面板', () => {
     await click('项目文件');
     const panel = host.querySelector(`${selector}.eg-panel--maximized`);
     expect(panel?.getAttribute('aria-modal')).toBe('true');
+    expect(panel?.querySelector('.project-file-changes [role="status"]')?.textContent).toBe('暂无文件变更');
+    expect(panel?.querySelector('[aria-label="变更文件定位"]')).toBeNull();
     expect(shortcut.getAttribute('aria-current')).toBe('page');
     expect(document.activeElement).toBe(button('还原项目文件面板'));
 
@@ -109,6 +111,74 @@ describe('侧栏直接打开隐藏面板', () => {
     await click('项目文件');
     expect(host.querySelector('[role="dialog"][aria-label="打开一个 Git 仓库"]')).not.toBeNull();
     expect(project.files).not.toHaveBeenCalled();
+  });
+
+  it('在项目文件标题显示变更数，按目录顺序定位并重新展开折叠目录', async () => {
+    vi.mocked(project.files).mockImplementation(async (_path, directory = '', showIgnored) => {
+      const entries: [path: string, directory: boolean, ignored?: boolean][] = directory === '' ? [['src', true], ['docs', true], ['README.md', false]]
+        : directory === 'src' ? [['src/deep', true, true]]
+        : directory === 'src/deep' ? [['src/deep/changed.ts', false], ['src/deep/clean.ts', false], ['src/deep/ignored.ts', false, true]] : [];
+      return { entries: entries.filter(([, , ignored]) => showIgnored || !ignored).map(([path, directory, ignored = false]) => ({ name: path.split('/').at(-1)!, path, directory, blocked: false, ignored })), truncated: false };
+    });
+    await openWorkspace();
+    expect(button('目录 src').getAttribute('aria-expanded')).toBe('false');
+    const search = host.querySelector<HTMLInputElement>('[aria-label="搜索项目文件"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'clean');
+    await act(async () => search.dispatchEvent(new Event('input', { bubbles: true })));
+    expect(host.querySelector('.project-search')).not.toBeNull();
+
+    const change = { oldPath: null, indexStatus: ' ', worktreeStatus: 'M', staged: false, unstaged: true, untracked: false, conflicted: false };
+    vi.mocked(service.git.open).mockResolvedValue({ ...workspace, revision: 'changed', files: [
+      { ...change, path: 'src/deep/changed.ts' },
+      { ...change, path: 'README.md', indexStatus: 'M', worktreeStatus: ' ', staged: true, unstaged: false },
+      { ...change, path: 'docs/deleted.md', worktreeStatus: 'D' },
+    ] });
+
+    await click('项目文件');
+    expect(search.value).toBe('');
+    const summary = host.querySelector('#eg-panel-heading-files + .project-file-changes [role="status"]');
+    expect(summary?.textContent).toBe('· 3 个文件修改');
+    expect(button('目录 src').getAttribute('aria-expanded')).toBe('true');
+    expect(button('目录 src/deep · 忽略').getAttribute('aria-expanded')).toBe('true');
+    expect(button('目录 docs').getAttribute('aria-expanded')).toBe('false');
+    expect(button('打开文件 src/deep/changed.ts · 修改').classList.contains('changed')).toBe(true);
+    expect(button('打开文件 README.md · 修改').classList.contains('changed')).toBe(true);
+    expect(button('打开文件 src/deep/clean.ts').classList.contains('changed')).toBe(false);
+    expect(host.querySelector('[aria-label="打开文件 src/deep/ignored.ts · 忽略"]')).toBeNull();
+
+    await click('目录 src');
+    expect(button('目录 src').getAttribute('aria-expanded')).toBe('false');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'clean');
+    await act(async () => search.dispatchEvent(new Event('input', { bubbles: true })));
+    const viewport = host.querySelector<HTMLElement>('[data-eg-panel="files"] .project-tree-scroll')!;
+    const scroll = vi.spyOn(viewport, 'scrollTo').mockImplementation(() => {});
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 200, 200));
+    vi.spyOn(HTMLButtonElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 100, 24));
+    const next = button('下一个变更文件');
+    next.focus();
+    await click('下一个变更文件');
+    const targetLabel = '打开文件 src/deep/changed.ts · 修改';
+    expect(search.value).toBe('');
+    expect(button(targetLabel).classList.contains('change-target')).toBe(true);
+    expect(button(targetLabel).getAttribute('aria-current')).toBe('true');
+    expect(scroll).toHaveBeenLastCalledWith({ top: 312, behavior: 'smooth' });
+    expect(document.activeElement).toBe(next);
+    expect(document.querySelector('[aria-label="项目文件编辑器"]')).toBeNull();
+
+    await click('目录 src');
+    await click('下一个变更文件');
+    expect(button('目录 src').getAttribute('aria-expanded')).toBe('false');
+    expect(button('打开文件 README.md · 修改').getAttribute('aria-current')).toBe('true');
+    await click('下一个变更文件');
+    expect(button(targetLabel).getAttribute('aria-current')).toBe('true');
+    await click('上一个变更文件');
+    expect(button('打开文件 README.md · 修改').getAttribute('aria-current')).toBe('true');
+
+    await click('目录 src');
+    await click('还原项目文件面板');
+    await click('项目文件');
+    expect(button(targetLabel).classList.contains('changed')).toBe(true);
+    expect(host.querySelector('.project-tree-row.change-target')).toBeNull();
   });
 });
 

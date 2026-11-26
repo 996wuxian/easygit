@@ -64,10 +64,11 @@ export interface WorkspaceGridProps {
   renderPanel: (id: PanelId) => ReactNode;
   panelActions?: (id: PanelId) => ReactNode;
   panelTitles?: Partial<Record<PanelId, ReactNode>>;
+  panelHeadingExtras?: Partial<Record<PanelId, ReactNode>>;
   className?: string;
 }
 
-export function WorkspaceGrid({ layout, maximized, onMaximizedChange, onMove, onResize, renderPanel, panelActions, panelTitles, className = "" }: WorkspaceGridProps) {
+export function WorkspaceGrid({ layout, maximized, onMaximizedChange, onMove, onResize, renderPanel, panelActions, panelTitles, panelHeadingExtras, className = "" }: WorkspaceGridProps) {
   const ids = visiblePanelIds(layout);
   const maximizedIsHidden = maximized !== null && !ids.includes(maximized);
   const [drag, setDrag] = useState<{ id: PanelId; target: PanelId | null; x: number; y: number } | null>(null);
@@ -205,6 +206,7 @@ export function WorkspaceGrid({ layout, maximized, onMaximizedChange, onMove, on
                 <div className="eg-panel-heading">
                   <Icon size={17} stroke={1.7} aria-hidden="true" />
                   <h2 id={`eg-panel-heading-${id}`}>{panelTitles?.[id] ?? title}</h2>
+                  {panelHeadingExtras?.[id]}
                 </div>
                 <div className="eg-panel-header-actions">
                   {panelActions?.(id)}

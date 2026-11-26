@@ -1,3 +1,7 @@
+.eg-panel--files.eg-panel--maximized .eg-panel-heading { column-gap: 10px; }
+.project-file-changes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; }
+.project-file-change-navigation { display: flex; gap: 2px; }
+.project-file-change-navigation .icon-button { width: 24px; height: 24px; }
 .project-files { display: flex; flex-direction: column; height: 340px; min-height: 0; color: var(--text); }
 .files-toolbar { display: flex; gap: 8px; align-items: center; padding: 12px; }
 .files-toolbar .file-filter { flex: 1; min-width: 0; margin: 0; }
@@ -32,7 +36,10 @@
 .project-tree-list .project-tree-list { padding-left: 16px; }
 .project-tree-row { display: flex; width: 100%; align-items: center; gap: 6px; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
 .project-tree-row:hover { background: var(--bg-soft); }
+.project-tree-row.changed { background: var(--primary-soft); }
+.project-tree-row.changed:hover { background: color-mix(in srgb, var(--primary) 16%, var(--bg-card)); }
 .project-tree-row.selected { background: var(--primary-soft); color: var(--primary); }
+.project-tree-row.change-target, .project-tree-row.change-target:hover { background: color-mix(in srgb, var(--primary) 22%, var(--bg-card)); color: var(--text); font-weight: 600; }
 .project-tree-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .project-tree-row:disabled, .project-tree-row.ignored { color: var(--text-muted); }
 .project-tree-row:disabled { cursor: default; }
