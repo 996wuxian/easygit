@@ -42,6 +42,7 @@ pub struct ProjectText {
     pub revision: String,
     pub bom: bool,
     pub line_ending: String,
+    pub read_only: bool,
     pub reason: Option<String>,
     pub image: Option<ProjectImage>,
 }
@@ -344,6 +345,7 @@ fn read_at(root: &Path, file: &str) -> Result<ProjectText, String> {
             revision: String::new(),
             bom: false,
             line_ending: "lf".into(),
+            read_only: true,
             reason: Some(
                 if mime.is_some() {
                     "图片超过 10 MiB，请使用外部工具查看。"
@@ -363,6 +365,7 @@ fn read_at(root: &Path, file: &str) -> Result<ProjectText, String> {
         revision,
         bom,
         line_ending: "lf".into(),
+        read_only: true,
         reason: None,
         image: mime.map(|mime| image_preview(mime, &bytes)),
     };
@@ -376,11 +379,24 @@ fn read_at(root: &Path, file: &str) -> Result<ProjectText, String> {
     match text {
         Ok(text) if !text.contains('\0') => {
             let crlf = text.matches("\r\n").count();
-            let lf = text.matches('\n').count();
-            if text.replace("\r\n", "").contains('\r') || (crlf > 0 && crlf != lf) {
-                result.reason = Some("文件包含混合或旧式换行，请使用外部编辑器以保留格式。".into());
+            let lf_only = text.matches('\n').count() - crlf;
+            let cr_only = text.matches('\r').count() - crlf;
+            if cr_only > 0 || (crlf > 0 && lf_only > 0) {
+                let legacy_cr = cr_only > 0 && crlf == 0 && lf_only == 0;
+                result.line_ending = if legacy_cr { "cr" } else { "mixed" }.into();
+                result.read_only = true;
+                result.content = Some(text.replace("\r\n", "\n").replace('\r', "\n"));
+                result.reason = Some(
+                    if legacy_cr {
+                        "文件使用旧式 CR 换行，当前仅供只读查看，请使用外部编辑器修改以保留格式。"
+                    } else {
+                        "文件包含混合换行，当前仅供只读查看，请使用外部编辑器修改以保留格式。"
+                    }
+                    .into(),
+                );
             } else {
                 result.line_ending = if crlf > 0 { "crlf" } else { "lf" }.into();
+                result.read_only = false;
                 result.content = Some(text.replace("\r\n", "\n"));
             }
         }
@@ -405,6 +421,11 @@ pub fn save_project_file(
             return Err(
                 "文件已被外部操作修改，请重新读取并核对后再保存；你的草稿仍然保留。".into(),
             );
+        }
+        if current.read_only {
+            return Err(current
+                .reason
+                .unwrap_or_else(|| "此文件当前仅供只读查看，请使用外部编辑器修改。".into()));
         }
         if current.content.is_none() || content.contains(['\0', '\r']) {
             return Err("只支持编辑 UTF-8 文本。".into());
@@ -458,6 +479,7 @@ pub fn save_project_file(
             revision: format!("{:x}", Sha256::digest(&bytes)),
             bom: current.bom,
             line_ending: current.line_ending,
+            read_only: false,
             reason: None,
             image: image_mime(file).map(|mime| image_preview(mime, &bytes)),
         };
@@ -690,17 +712,29 @@ mod tests {
         for content in [
             b"binary\0".as_slice(),
             b"\xff\xfe",
-            b"mixed\r\nnew\n",
             &vec![b'x'; MAX_BYTES + 1],
         ] {
             fs::write(root.join("text.txt"), content).unwrap();
             let read = read_project_file(path, "text.txt").unwrap();
-            assert!(read.content.is_none() && read.reason.is_some());
+            assert!(read.content.is_none() && read.read_only && read.reason.is_some());
+            assert!(save_project_file(path, "text.txt", &read.revision, "draft").is_err());
+            assert_eq!(fs::read(root.join("text.txt")).unwrap(), content);
+        }
+        for (content, expected_ending, expected_text) in [
+            (b"mixed\r\nnew\n".as_slice(), "mixed", "mixed\nnew\n"),
+            (b"legacy\rold\r".as_slice(), "cr", "legacy\nold\n"),
+        ] {
+            fs::write(root.join("text.txt"), content).unwrap();
+            let read = read_project_file(path, "text.txt").unwrap();
+            assert_eq!(read.content.as_deref(), Some(expected_text));
+            assert_eq!(read.line_ending, expected_ending);
+            assert!(read.read_only && read.reason.is_some());
             assert!(save_project_file(path, "text.txt", &read.revision, "draft").is_err());
             assert_eq!(fs::read(root.join("text.txt")).unwrap(), content);
         }
         fs::write(root.join("text.txt"), "small").unwrap();
         let read = read_project_file(path, "text.txt").unwrap();
+        assert!(!read.read_only);
         assert!(
             save_project_file(path, "text.txt", &read.revision, &"x".repeat(MAX_BYTES + 1))
                 .is_err()

@@ -4,7 +4,8 @@ import type { RepositorySnapshot } from './git';
 export interface ProjectEntry { name: string; path: string; directory: boolean; blocked: boolean; ignored: boolean }
 export interface ProjectListing { entries: ProjectEntry[]; truncated: boolean }
 export interface ProjectImage { mime: string; dataUrl: string; size: number }
-export interface ProjectText { content: string | null; revision: string; bom: boolean; lineEnding: 'lf' | 'crlf'; reason: string | null; image?: ProjectImage | null }
+export type ProjectLineEnding = 'lf' | 'crlf' | 'cr' | 'mixed';
+export interface ProjectText { content: string | null; revision: string; bom: boolean; lineEnding: ProjectLineEnding; readOnly?: boolean; reason: string | null; image?: ProjectImage | null }
 export interface SavedProjectText { file: ProjectText; snapshot: RepositorySnapshot | null; refreshError: string | null }
 export interface DeletedProjectEntry { snapshot: RepositorySnapshot | null; refreshError: string | null }
 export type FileSearchMode = 'name' | 'content';

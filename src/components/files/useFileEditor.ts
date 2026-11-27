@@ -22,12 +22,12 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
   const update = (patch: Partial<EditorState>) => { current.current = { ...current.current, ...patch }; setState(current.current); };
   const dirty = () => {
     const doc = current.current.document;
-    return Boolean(doc && doc.original.content !== null && doc.draft !== doc.original.content);
+    return Boolean(doc && doc.original.content !== null && !doc.original.readOnly && doc.draft !== doc.original.content);
   };
 
   async function save(): Promise<boolean> {
     const doc = current.current.document;
-    if (!doc || current.current.saving || current.current.external || doc.original.content === null) return false;
+    if (!doc || current.current.saving || current.current.external || doc.original.content === null || doc.original.readOnly) return false;
     if (!dirty()) return true;
     update({ saving: true, error: '' });
     try {
@@ -98,7 +98,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
       void project.readFile(doc.repository, doc.file).then(original => {
         const active = current.current.document;
         if (cancelled || !active || active.key !== doc.key || current.current.saving || active.original.revision !== doc.original.revision) return;
-        if (original.revision === active.original.revision && original.reason === active.original.reason) return;
+        if (original.revision === active.original.revision && original.reason === active.original.reason && Boolean(original.readOnly) === Boolean(active.original.readOnly)) return;
         if (dirty()) update({ external: true });
         else update({ document: { ...active, original, draft: original.content ?? '', key: ++sequence.current }, external: false, error: '' });
       }).catch(error => {
@@ -131,7 +131,7 @@ export function useFileEditor(snapshot: RepositorySnapshot, onSave: Save) {
         update({ document: null, loading: false, error: '', external: false });
       }
     },
-    change: (draft: string) => { const doc = current.current.document; if (doc && !current.current.saving) update({ document: { ...doc, draft } }); },
+    change: (draft: string) => { const doc = current.current.document; if (doc && !doc.original.readOnly && !current.current.saving) update({ document: { ...doc, draft } }); },
   };
 }
 

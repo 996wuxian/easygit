@@ -79,4 +79,24 @@ describe('内容搜索的文件行列定位', () => {
     await act(async () => { finish({ ...text, content: 'saved draft', revision: 'saved' }); expect(await saving).toBe(true); });
     expect(editor.dirty).toBe(false); expect(editor.document?.original.revision).toBe('saved');
   });
+
+  it('混合换行只读文件会保留展示内容，且禁止编辑与保存', async () => {
+    const mixed: ProjectText = {
+      content: 'first\nsecond\n',
+      revision: 'mixed-rev',
+      bom: false,
+      lineEnding: 'mixed',
+      readOnly: true,
+      reason: '文件包含混合换行，当前仅供只读查看，请使用外部编辑器修改以保留格式。',
+    };
+    vi.mocked(project.readFile).mockResolvedValueOnce(mixed);
+    await act(async () => editor.open('index.html'));
+    expect(editor.document?.draft).toBe('first\nsecond\n');
+    expect(editor.document?.original.readOnly).toBe(true);
+    await act(async () => editor.change('mutated'));
+    expect(editor.document?.draft).toBe('first\nsecond\n');
+    expect(editor.dirty).toBe(false);
+    await act(async () => { expect(await editor.save()).toBe(false); });
+    expect(save).not.toHaveBeenCalled();
+  });
 });

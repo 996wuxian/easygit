@@ -46,7 +46,9 @@ export default function CodeEditor({ file, content, readOnly, target, onChange, 
   const editable = useRef(new Compartment());
   useEffect(() => {
     const mode = new Compartment();
+    const styleNonce = document.querySelector<HTMLStyleElement>('style[nonce]')?.nonce;
     const editor = new EditorView({ parent: host.current!, state: EditorState.create({ doc: content, extensions: [
+      ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       lineNumbers(), drawSelection(), highlightActiveLine(), history(), indentOnInput(), bracketMatching(),
       syntaxHighlighting(highlighting), search({ top: true, createPanel: createEditorSearchPanel }), highlightSelectionMatches(),
       EditorState.phrases.of({ 'current match': '当前匹配', 'on line': '位于行', 'replaced match on line $': '已替换第 $ 行的匹配', 'replaced $ matches': '已替换 $ 处匹配' }),
