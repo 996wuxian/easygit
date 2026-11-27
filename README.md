@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64" />
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2" />
   <img src="https://img.shields.io/badge/React-19-149ECA?style=for-the-badge&logo=react&logoColor=white" alt="React 19" />
-  <img src="https://img.shields.io/badge/Version-0.1.6-16885A?style=for-the-badge" alt="Version 0.1.6" />
+  <img src="https://img.shields.io/badge/Version-0.2.0-16885A?style=for-the-badge" alt="Version 0.2.0" />
 </p>
 
 <p align="center">
@@ -28,18 +28,22 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="docs/screenshots/code-diff.jpg"><img src="docs/screenshots/code-diff.jpg" alt="全屏代码差异和左右比对" width="100%" /></a>
-      <p><strong>代码差异</strong><br />统一视图或左右比对；搜索差异、跳转变更块，再按文件暂存或撤回。</p>
+      <a href="docs/screenshots/code-diff.jpg"><img src="docs/screenshots/code-diff.jpg" alt="全屏代码差异、左右比对与逐行作者标注" width="100%" /></a>
+      <p><strong>代码差异与逐行标注</strong><br />统一视图或左右比对；搜索差异、跳转变更块、悬停查看逐行作者与提交信息（Blame），再按文件或变更块暂存与撤回。</p>
     </td>
     <td width="50%" valign="top">
       <a href="docs/screenshots/branches.jpg"><img src="docs/screenshots/branches.jpg" alt="本地与远程分支管理" width="100%" /></a>
-      <p><strong>分支管理</strong><br />查看本地和远程分支、设置上游、比较代码；拖动分支可先预览合并。</p>
+      <p><strong>分支管理</strong><br />查看本地和远程分支、搜索分支、设置上游、比较代码；拖动分支可先预览合并。</p>
     </td>
   </tr>
   <tr>
-    <td colspan="2" align="center">
-      <a href="docs/screenshots/history.jpg"><img src="docs/screenshots/history.jpg" alt="提交历史图" width="76%" /></a>
-      <p><strong>提交历史</strong><br />沿提交图浏览分支历史，搜索提交信息、切换范围、加载更多记录。</p>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/history.jpg"><img src="docs/screenshots/history.jpg" alt="提交历史图" width="100%" /></a>
+      <p><strong>提交历史</strong><br />沿提交图浏览分支历史，搜索提交信息、切换范围、加载更多记录，支持详情查看与提交对比。</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/project-files.jpg"><img src="docs/screenshots/project-files.jpg" alt="项目文件浏览与变更定位" width="100%" /></a>
+      <p><strong>项目文件与变更定位</strong><br />按文件名或内容搜索项目文件，最大化时显示变更数并支持一键定位修改文件；内置代码编辑、只读查看与图片预览。</p>
     </td>
   </tr>
 </table>
@@ -48,13 +52,13 @@
 
 | 日常工作 | 功能 |
 | --- | --- |
-| **检查并提交改动** | 分开查看工作区和暂存区；筛选、多选和批量暂存文件；预览后按文件或变更块撤回；保存提交草稿、提交并推送。 |
-| **比较代码** | 统一差异或全屏左右比对；同步滚动、搜索差异、跳转变更块；查看文件差异并预览暂存或撤回操作。 |
-| **管理分支与远程** | 创建、切换、重命名和删除本地分支，浏览远程跟踪分支，设置上游；比较分支并拖动预览合并。远程配置支持添加、修改和移除。 |
+| **检查并提交改动** | 分开查看工作区和暂存区；筛选、多选和批量暂存文件；预览后按文件或变更块撤回；按仓库自动保存提交草稿、提交并推送。 |
+| **比较代码** | 统一差异或全屏左右比对；同步滚动、搜索差异、跳转变更块；悬停或点击代码行查看逐行作者与提交信息（Blame）；查看文件差异并预览暂存或撤回操作。 |
+| **管理分支与远程** | 创建、切换、重命名和删除本地分支，浏览远程跟踪分支，设置上游；搜索分支、比较分支并拖动预览合并。远程配置支持添加、修改和移除。 |
 | **查看提交历史** | 提交图、分支范围筛选、提交信息搜索和分页；查看提交详情、比较任意两个提交、拣选或反向提交，也可撤回尚未推送的末次提交。 |
 | **处理冲突与 stash** | 按块保留当前版本、传入版本或双方，也可手动编辑结果；暂存后继续或取消 merge、rebase、cherry-pick、revert。stash 支持未跟踪文件、差异预览和恢复。 |
-| **浏览项目并运行脚本** | 文件树支持文件名、路径和内容搜索；内置文本编辑器；读取根目录 `package.json` 脚本并在项目终端执行。 |
-| **布置自己的工作台** | 八种面板可显示、隐藏、换位、缩放和最大化；布局自动保存。支持多项目、项目笔记、浅色／深色主题和系统托盘。 |
+| **浏览项目并运行脚本** | 文件树支持文件名、路径和内容搜索，最大化查看时统计变更文件数并支持逐个定位；内置文本编辑器（支持只读查看混合或旧式换行文件）与图片预览，支持复制路径、系统定位和回收站删除；读取根目录 `package.json` 脚本并在独立终端执行。 |
+| **布置自己的工作台** | 八种面板可显示、隐藏、换位、缩放和最大化，布局自动保存；顶部横向仓库标签栏支持多项目切换与长按拖拽排序。支持项目笔记、浅色／深色主题、系统托盘和单实例运行。 |
 | **生成提交信息** | 可选配置兼容的 AI 服务，根据已暂存差异生成提交信息；差异会发送到所配置的服务，API Key 在 Windows 上由系统加密保存。 |
 
 打开仓库时先显示本地状态，再后台获取远程信息。**获取不会自动拉取或合并代码**；拉取时才会将上游更新合并到当前分支。
@@ -90,7 +94,7 @@
 ## 当前限制
 
 - 暂存以文件为单位，暂不支持分块／选行暂存和交互式 rebase 编排。
-- 差异预览和文本编辑主要支持 2 MiB 以内的 UTF-8 文件。较大文件、其他编码，以及符号链接和子模块冲突需使用外部工具处理。
+- 差异预览和文本编辑主要支持 2 MiB 以内的 UTF-8 文件（混合换行或旧式 CR 换行文件仅支持只读查看；图片预览支持 10 MiB 以内）。较大文件、其他编码，以及符号链接和子模块冲突需使用外部工具处理。
 - 多远程仓库可分别查看；界面支持新增、修改单个获取地址和移除远程。多获取地址或独立推送地址的调整请使用 Git 命令。
 - 文件编辑草稿在正常切换和退出时会提示未保存内容，暂不支持异常退出后的自动恢复。
 
